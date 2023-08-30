@@ -417,7 +417,11 @@ impl CompactSeqDB {
         )
     }
 
-    fn get_fastx_reader(&mut self, filepath: String) -> Result<GZFastaReader, std::io::Error> {
+    fn get_fastx_reader(
+        &mut self,
+        filepath: String,
+        to_upper_case: bool,
+    ) -> Result<GZFastaReader, std::io::Error> {
         let file = File::open(&filepath)?;
         let mut reader = BufReader::new(file);
         let mut is_gzfile = false;
@@ -443,12 +447,12 @@ impl CompactSeqDB {
         if is_gzfile {
             drop(std_buf);
             Ok(GZFastaReader::GZFile(
-                FastaReader::new(gz_buf, &filepath, 1 << 14, true).unwrap(),
+                FastaReader::new(gz_buf, &filepath, 1 << 14, true, to_upper_case).unwrap(),
             ))
         } else {
             drop(gz_buf);
             Ok(GZFastaReader::RegularFile(
-                FastaReader::new(std_buf, &filepath, 1 << 14, true).unwrap(),
+                FastaReader::new(std_buf, &filepath, 1 << 14, true, to_upper_case).unwrap(),
             ))
         }
     }
@@ -524,8 +528,12 @@ impl CompactSeqDB {
             });
     }
 
-    pub fn load_seqs_from_fastx(&mut self, filepath: String) -> Result<(), std::io::Error> {
-        match self.get_fastx_reader(filepath)? {
+    pub fn load_seqs_from_fastx(
+        &mut self,
+        filepath: String,
+        to_upper_case: bool,
+    ) -> Result<(), std::io::Error> {
+        match self.get_fastx_reader(filepath, to_upper_case)? {
             #[allow(clippy::useless_conversion)] // the into_iter() is necessary for dyn patching
             GZFastaReader::GZFile(reader) => self.load_seq_from_reader(&mut reader.into_iter()),
 
@@ -659,8 +667,12 @@ impl CompactSeqDB {
         }
     }
 
-    pub fn load_index_from_fastx(&mut self, filepath: String) -> Result<(), std::io::Error> {
-        match self.get_fastx_reader(filepath)? {
+    pub fn load_index_from_fastx(
+        &mut self,
+        filepath: String,
+        to_upper_case: bool,
+    ) -> Result<(), std::io::Error> {
+        match self.get_fastx_reader(filepath, to_upper_case)? {
             #[allow(clippy::useless_conversion)] // the into_iter() is necessary for dyn patching
             GZFastaReader::GZFile(reader) => self.load_index_from_reader(&mut reader.into_iter()),
 
@@ -730,7 +742,7 @@ impl CompactSeqDB {
 
     pub fn get_seq(&self, seq: &CompactSeq) -> Vec<u8> {
         self.reconstruct_seq_from_frags(
-            seq.seq_frag_range.0..seq.seq_frag_range.0 + seq.seq_frag_range.1
+            seq.seq_frag_range.0..seq.seq_frag_range.0 + seq.seq_frag_range.1,
         )
     }
 
@@ -746,7 +758,7 @@ impl GetSeq for CompactSeqDB {
     fn get_seq_by_id(&self, sid: u32) -> Vec<u8> {
         let seq = self.seqs.get(sid as usize).unwrap();
         self.reconstruct_seq_from_frags(
-            seq.seq_frag_range.0..seq.seq_frag_range.0 + seq.seq_frag_range.1
+            seq.seq_frag_range.0..seq.seq_frag_range.0 + seq.seq_frag_range.1,
         )
     }
 
@@ -1083,9 +1095,7 @@ pub fn get_principal_bundles_from_adj_list(
         }
     }
 
-    let long_paths = paths
-        .into_iter()
-        .filter(|p| p.len() > path_len_cutoff);
+    let long_paths = paths.into_iter().filter(|p| p.len() > path_len_cutoff);
 
     let mut main_bundle_path_vertices = FxHashSet::<(u64, u64)>::default();
 

@@ -96,7 +96,7 @@ fn main() -> Result<(), std::io::Error> {
         });
     };
 
-    match get_fastx_reader(args.query_fastx_path)? {
+    match get_fastx_reader(args.query_fastx_path, true)? {
         #[allow(clippy::useless_conversion)] // the into_iter() is necessary for dyn patching
         GZFastaReader::GZFile(reader) => add_seqs(&mut reader.into_iter()),
 
@@ -116,8 +116,14 @@ fn main() -> Result<(), std::io::Error> {
         let _ = handle.write_all(
             b"the option `--fastx_file` is specified, read the input file as a fastx file.\n",
         );
-        let _ =
-            seq_index_db.load_from_fastx(args.pgr_db_prefix, args.w, args.k, args.r, args.min_span);
+        let _ = seq_index_db.load_from_fastx(
+            args.pgr_db_prefix,
+            args.w,
+            args.k,
+            args.r,
+            args.min_span,
+            true,
+        );
     } else {
         #[cfg(feature = "with_agc")]
         {
@@ -149,7 +155,7 @@ fn main() -> Result<(), std::io::Error> {
                     Some(args.max_target_count),
                     Some(args.max_aln_chain_span),
                     None,
-                    false
+                    false,
                 )
             } else {
                 seq_index_db.query_fragment_to_hps(
@@ -160,7 +166,7 @@ fn main() -> Result<(), std::io::Error> {
                     Some(args.max_target_count),
                     Some(args.max_aln_chain_span),
                     None,
-                    false
+                    false,
                 )
             };
 

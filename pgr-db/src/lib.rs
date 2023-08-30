@@ -60,7 +60,7 @@ mod tests {
         };
 
         let mut fastx_reader =
-            FastaReader::new(fastx_buf, &filepath.to_string(), 1 << 12, true).unwrap();
+            FastaReader::new(fastx_buf, &filepath.to_string(), 1 << 12, true, false).unwrap();
         while let Some(rec) = fastx_reader.next_rec() {
             let rec = rec.unwrap();
             let seqname = String::from_utf8_lossy(&rec.id).into_owned();
@@ -72,7 +72,7 @@ mod tests {
     #[test]
     pub fn gz_file_read_test() {
         let mut sdb = seq_db::CompactSeqDB::new(seq_db::SHMMRSPEC);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs2.fa.gz".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs2.fa.gz".to_string(), false);
         println!("{:?}", sdb.seqs[0].seq_frag_range);
     }
 
@@ -80,7 +80,7 @@ mod tests {
     fn load_seq_test() {
         let seqs = load_seqs();
         let mut sdb = seq_db::CompactSeqDB::new(seq_db::SHMMRSPEC);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs2.fa.gz".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs2.fa.gz".to_string(), false);
         //println!("test");
         for seq in sdb.seqs.iter() {
             //println!();
@@ -167,7 +167,7 @@ mod tests {
     fn rc_match() {
         use seq_db::GetSeq;
         let mut sdb = seq_db::CompactSeqDB::new(seq_db::SHMMRSPEC);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/test_rev.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/test_rev.fa".to_string(), false);
         let cs0 = sdb.get_seq_by_id(0);
         let cs1 = sdb.get_seq_by_id(1);
         let shmmr_spec = seq_db::SHMMRSPEC;
@@ -423,7 +423,7 @@ mod tests {
     fn test_seq_db_get_sub_read() {
         use seq_db::GetSeq;
         let mut sdb = seq_db::CompactSeqDB::new(seq_db::SHMMRSPEC);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/test_seqs.fa".to_string(), false);
         let sid = 0;
         let seq = sdb.get_seq_by_id(sid);
 

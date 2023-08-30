@@ -156,6 +156,7 @@ impl SeqIndexDB {
         k: u32,
         r: u32,
         min_span: u32,
+        to_upper_case: bool,
     ) -> Result<(), std::io::Error> {
         let spec = ShmmrSpec {
             w,
@@ -165,7 +166,8 @@ impl SeqIndexDB {
             sketch: false,
         };
         let mut sdb = seq_db::CompactSeqDB::new(spec.clone());
-        sdb.load_seqs_from_fastx(filepath)?;
+
+        sdb.load_seqs_from_fastx(filepath, to_upper_case)?;
         self.shmmr_spec = Some(spec);
         let mut seq_index = FxHashMap::<(String, Option<String>), (u32, u32)>::default();
         let mut seq_info = FxHashMap::<u32, (String, Option<String>, u32)>::default();
@@ -180,13 +182,17 @@ impl SeqIndexDB {
         Ok(())
     }
 
-    pub fn append_from_fastx(&mut self, filepath: String) -> Result<(), std::io::Error> {
+    pub fn append_from_fastx(
+        &mut self,
+        filepath: String,
+        to_upper_case: bool,
+    ) -> Result<(), std::io::Error> {
         assert!(
             self.backend == Backend::FASTX,
             "Only DB created with load_from_fastx() can add data from another fastx file"
         );
         let sdb = self.seq_db.as_mut().unwrap();
-        sdb.load_seqs_from_fastx(filepath)?;
+        sdb.load_seqs_from_fastx(filepath, to_upper_case)?;
         let mut seq_index = FxHashMap::<(String, Option<String>), (u32, u32)>::default();
         let mut seq_info = FxHashMap::<u32, (String, Option<String>, u32)>::default();
         sdb.seqs.iter().for_each(|v| {
@@ -273,7 +279,7 @@ impl SeqIndexDB {
                 max_count_target,
                 max_aln_span,
                 max_gap,
-                oriented
+                oriented,
             );
             Some(res)
         } else {
@@ -291,7 +297,7 @@ impl SeqIndexDB {
         max_count_target: Option<u32>,
         max_aln_span: Option<u32>,
         max_gap: Option<u32>,
-        oriented: bool
+        oriented: bool,
     ) -> Option<Vec<(u32, Vec<(f32, Vec<aln::HitPair>)>)>> {
         let shmmr_spec = self.shmmr_spec.as_ref().unwrap();
 
@@ -498,7 +504,7 @@ impl SeqIndexDB {
             let adj_list = seq_db::frag_map_to_adj_list(frag_map, min_count, keeps);
             if adj_list.is_empty() {
                 return vec![];
-            } 
+            }
             seq_db::get_principal_bundles_from_adj_list(frag_map, &adj_list, path_len_cutoff)
                 .0
                 .into_iter()
@@ -1014,7 +1020,10 @@ pub fn get_principal_bundle_decomposition(
     seqid_smps_with_bundle_id_seg_direction
 }
 
-pub fn get_fastx_reader(filepath: String) -> Result<GZFastaReader, std::io::Error> {
+pub fn get_fastx_reader(
+    filepath: String,
+    to_upper_case: bool,
+) -> Result<GZFastaReader, std::io::Error> {
     let file = File::open(&filepath)?;
     let mut reader = BufReader::new(file);
     let mut is_gzfile = false;
@@ -1040,12 +1049,12 @@ pub fn get_fastx_reader(filepath: String) -> Result<GZFastaReader, std::io::Erro
     if is_gzfile {
         drop(std_buf);
         Ok(GZFastaReader::GZFile(
-            FastaReader::new(gz_buf, &filepath, 256, false).unwrap(),
+            FastaReader::new(gz_buf, &filepath, 256, false, to_upper_case).unwrap(),
         ))
     } else {
         drop(gz_buf);
         Ok(GZFastaReader::RegularFile(
-            FastaReader::new(std_buf, &filepath, 256, false).unwrap(),
+            FastaReader::new(std_buf, &filepath, 256, false, to_upper_case).unwrap(),
         ))
     }
 }

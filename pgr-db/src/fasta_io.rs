@@ -21,6 +21,7 @@ pub struct FastaReader<R> {
     filename: String,
     seq_capacity: usize,
     keep_source: bool,
+    to_upper_case: bool,
 }
 
 pub fn reverse_complement(seq: &[u8]) -> Vec<u8> {
@@ -49,6 +50,7 @@ impl<R: BufRead> FastaReader<R> {
         filename: &String,
         seq_capacity: usize,
         keep_source: bool,
+        to_upper_case: bool,
     ) -> Result<Self, io::Error> {
         let t: Fastx;
         {
@@ -73,6 +75,7 @@ impl<R: BufRead> FastaReader<R> {
             filename: filename.to_string(),
             seq_capacity,
             keep_source,
+            to_upper_case,
         })
     }
 
@@ -100,12 +103,16 @@ impl<R: BufRead> FastaReader<R> {
             .filter(|c| *c != b'\n' && *c != b' ' && *c != b'\r')
             .collect::<Vec<u8>>();
         let _x = self.inner.read_until(b'>', &mut seq);
+
         let mut seq = seq
             .drain(..)
             .filter(|c| *c != b'\n' && *c != b'>' && *c != b'\r')
             .collect::<Vec<u8>>();
         if seq.capacity() as f32 > seq.len() as f32 * 1.2 {
             seq.shrink_to_fit();
+        }
+        if self.to_upper_case {
+            seq[..].make_ascii_uppercase();
         }
         let source = if self.keep_source {
             Some(self.filename.to_string())
@@ -358,7 +365,7 @@ pub fn build(seq_list_file: &String, out_prefix: &String) -> Result<usize, io::E
         let _ = reader.seek(SeekFrom::Start(0));
         if is_gzfile {
             let fastx_buf = BufReader::new(MultiGzDecoder::new(&mut reader));
-            let mut fastx_reader = FastaReader::new(fastx_buf, &input_fn, 1 << 14, true)?;
+            let mut fastx_reader = FastaReader::new(fastx_buf, &input_fn, 1 << 14, true, true)?;
             while let Some(r) = fastx_reader.next_rec() {
                 let r = r.unwrap();
                 if r.seq.len() < 500 {
@@ -381,7 +388,7 @@ pub fn build(seq_list_file: &String, out_prefix: &String) -> Result<usize, io::E
                 seq_id += 1;
             }
         } else {
-            let mut fastx_reader = FastaReader::new(reader, &input_fn, 1 << 14, true)?;
+            let mut fastx_reader = FastaReader::new(reader, &input_fn, 1 << 14, true, true)?;
             while let Some(r) = fastx_reader.next_rec() {
                 let r = r.unwrap();
                 if r.seq.len() < 500 {

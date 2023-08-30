@@ -221,7 +221,7 @@ fn main() -> Result<(), std::io::Error> {
             // get principle bundle from fastx_path
 
             seq_index_db
-                .load_from_fastx(fastx_path.clone(), args.w, args.k, args.r, args.min_span)
+                .load_from_fastx(fastx_path.clone(), args.w, args.k, args.r, args.min_span, true)
                 .unwrap_or_else(|_| panic!("can't read file {}", fastx_path));
 
             let (principal_bundles_with_id, vertex_to_bundle_id_direction_pos) = seq_index_db
@@ -252,14 +252,14 @@ fn main() -> Result<(), std::io::Error> {
         decomp_fastx_path = target_fastx_path.clone();
         let mut decomp_seq_index_db = SeqIndexDB::new();
         decomp_seq_index_db
-            .load_from_fastx(target_fastx_path, args.w, args.k, args.r, args.min_span)
+            .load_from_fastx(target_fastx_path, args.w, args.k, args.r, args.min_span, true)
             .unwrap_or_else(|_| panic!("can't read file {}", fastx_path));
         decomp_seq_index_db
     } else {
         //The file is read using a Mmap which is not clonable, need to rebuild the database. TODO: fix this.
         let mut decomp_seq_index_db = SeqIndexDB::new();
         decomp_seq_index_db
-            .load_from_fastx(fastx_path.clone(), args.w, args.k, args.r, args.min_span)
+            .load_from_fastx(fastx_path.clone(), args.w, args.k, args.r, args.min_span, true)
             .unwrap_or_else(|_| panic!("can't read file {}", fastx_path));
         decomp_fastx_path = fastx_path;
         decomp_seq_index_db

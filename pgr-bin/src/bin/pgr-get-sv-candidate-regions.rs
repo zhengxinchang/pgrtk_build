@@ -189,6 +189,7 @@ fn main() -> Result<(), std::io::Error> {
         args.k,
         args.r,
         args.min_span,
+        true,
     )?;
 
     let mut out_alnmap = BufWriter::new(
@@ -245,7 +246,7 @@ fn main() -> Result<(), std::io::Error> {
         });
     };
 
-    match get_fastx_reader(args.assembly_contig_path)? {
+    match get_fastx_reader(args.assembly_contig_path, true)? {
         #[allow(clippy::useless_conversion)] // the into_iter() is necessary for dyn patching
         GZFastaReader::GZFile(reader) => add_seqs(&mut reader.into_iter()),
 
@@ -710,50 +711,51 @@ fn main() -> Result<(), std::io::Error> {
             let t_name = target_name.get(t_idx).unwrap();
             in_aln_sv_and_bed_records.push((t_name.clone(), ts + 1, te + 1, bed_annotation));
             if let Some(out_sv_qry_seq_file) = out_sv_qry_seq_file.as_mut() {
-            writeln!(
-                out_sv_qry_seq_file,
-                ">{}:{}-{}:{}@{}:{}-{}",
-                q_name, qs, qe, orientation, t_name, ts, te
-            )
-            .expect("writing fasta for SV candidate fail");
-            if *orientation == 1 {
                 writeln!(
                     out_sv_qry_seq_file,
-                    "{}",
-                    String::from_utf8_lossy(&reverse_complement(
-                        &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
-                    ))
+                    ">{}:{}-{}:{}@{}:{}-{}",
+                    q_name, qs, qe, orientation, t_name, ts, te
                 )
                 .expect("writing fasta for SV candidate fail");
-            } else {
+                if *orientation == 1 {
+                    writeln!(
+                        out_sv_qry_seq_file,
+                        "{}",
+                        String::from_utf8_lossy(&reverse_complement(
+                            &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
+                        ))
+                    )
+                    .expect("writing fasta for SV candidate fail");
+                } else {
+                    writeln!(
+                        out_sv_qry_seq_file,
+                        "{}",
+                        String::from_utf8_lossy(
+                            &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
+                        )
+                    )
+                    .expect("writing fasta for SV candidate fail");
+                };
+            };
+            if let Some(out_sv_ref_seq_file) = out_sv_ref_seq_file.as_mut() {
                 writeln!(
-                    out_sv_qry_seq_file,
+                    out_sv_ref_seq_file,
+                    ">{}:{}-{}@{}:{}-{}:{}",
+                    t_name, ts, te, q_name, qs, qe, orientation
+                )
+                .expect("writing fasta for SV candidate fail");
+                writeln!(
+                    out_sv_ref_seq_file,
                     "{}",
                     String::from_utf8_lossy(
-                        &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
+                        &ref_seq_index_db
+                            .get_sub_seq_by_id(*t_idx, *ts as usize, *te as usize)
+                            .unwrap()[..]
                     )
                 )
                 .expect("writing fasta for SV candidate fail");
-            };
-        };
-        if let Some(out_sv_ref_seq_file) = out_sv_ref_seq_file.as_mut() {
-            writeln!(
-                out_sv_ref_seq_file,
-                ">{}:{}-{}@{}:{}-{}:{}",
-                t_name, ts, te, q_name, qs, qe, orientation
-            )
-            .expect("writing fasta for SV candidate fail");
-            writeln!(
-                out_sv_ref_seq_file,
-                "{}",
-                String::from_utf8_lossy(
-                    &ref_seq_index_db
-                        .get_sub_seq_by_id(*t_idx, *ts as usize, *te as usize)
-                        .unwrap()[..]
-                )
-            )
-            .expect("writing fasta for SV candidate fail");
-        }}
+            }
+        },
     );
 
     let mut all_bed_records = Vec::<_>::new();

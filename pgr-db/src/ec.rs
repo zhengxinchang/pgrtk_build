@@ -4,7 +4,7 @@
 use crate::aln::query_fragment_to_hps;
 use crate::fasta_io::reverse_complement;
 use crate::graph_utils::{ShmmrGraphNode, WeightedNode};
-use crate::seq_db::{self, CompactSeqDB, GetSeq, raw_query_fragment};
+use crate::seq_db::{self, raw_query_fragment, CompactSeqDB, GetSeq};
 use crate::shmmrutils::{sequence_to_shmmrs, ShmmrSpec};
 use petgraph::algo::toposort;
 use petgraph::EdgeDirection::Outgoing;
@@ -92,21 +92,20 @@ pub fn naive_dbg_consensus(
         });
 
         let mut tgt_rev_path = FxHashMap::<usize, Option<usize>>::default();
-        (0..tgt_seq.len() - kmer_size + 1)
-            .for_each(|p| {
-                if p != 0 {
-                    let kmer0 = tgt_seq[p..p + kmer_size].to_vec();
-                    let idx0 = *kmer_idx.get(&kmer0).unwrap();
-                    let kmer1 = tgt_seq[p - 1..p + kmer_size - 1].to_vec();
-                    let idx1 = *kmer_idx.get(&kmer1).unwrap();
-                    // println!("{:?} {:?} {} {}", kmer0, kmer1, idx0, idx1);
-                    tgt_rev_path.insert(idx0, Some(idx1));
-                } else {
-                    let kmer0 = tgt_seq[p..p + kmer_size].to_vec();
-                    let idx0 = *kmer_idx.get(&kmer0).unwrap();
-                    tgt_rev_path.insert(idx0, None);
-                }
-            });
+        (0..tgt_seq.len() - kmer_size + 1).for_each(|p| {
+            if p != 0 {
+                let kmer0 = tgt_seq[p..p + kmer_size].to_vec();
+                let idx0 = *kmer_idx.get(&kmer0).unwrap();
+                let kmer1 = tgt_seq[p - 1..p + kmer_size - 1].to_vec();
+                let idx1 = *kmer_idx.get(&kmer1).unwrap();
+                // println!("{:?} {:?} {} {}", kmer0, kmer1, idx0, idx1);
+                tgt_rev_path.insert(idx0, Some(idx1));
+            } else {
+                let kmer0 = tgt_seq[p..p + kmer_size].to_vec();
+                let idx0 = *kmer_idx.get(&kmer0).unwrap();
+                tgt_rev_path.insert(idx0, None);
+            }
+        });
 
         let last_kmer = tgt_seq[tgt_seq.len() - kmer_size..tgt_seq.len()].to_vec();
         // println!("{:?}", last_kmer);
@@ -411,8 +410,8 @@ pub fn guided_shmmr_dbg_consensus(
             if out_count == 0 {
                 break;
             }
-            
-            if let Some(node) = next_guide_node { 
+
+            if let Some(node) = next_guide_node {
                 next_node = node;
                 last_in_guide_nodes = Some(next_node.1);
             } else if !succ_list_f.is_empty() {
@@ -541,7 +540,7 @@ pub fn shmmr_sparse_aln_consensus_with_sdb(
             Some(32),
             Some(33),
             None,
-            true
+            true,
         );
 
         let mut hit_map = FxHashMap::<(u32, u32, u8), Vec<(u32, (u32, u32, u8))>>::default();
@@ -596,7 +595,7 @@ pub fn shmmr_sparse_aln_consensus_with_sdb(
                     let c_hit = hit_map.get(&r).unwrap();
                     let p_hit = p_hit
                         .iter()
-                        .copied() 
+                        .copied()
                         .collect::<FxHashMap<u32, (u32, u32, u8)>>();
                     let c_hit = c_hit
                         .iter()
@@ -643,8 +642,7 @@ pub fn shmmr_sparse_aln_consensus_with_sdb(
                     }
 
                     if patch_cov >= min_cov {
-                        (0..patch_seq.len())
-                            .for_each(|_| cov.push(patch_cov));
+                        (0..patch_seq.len()).for_each(|_| cov.push(patch_cov));
                         seq.extend(patch_seq);
                         seq.extend(seq0[r.0 as usize..r.1 as usize].to_vec());
                         (r.0..r.1).for_each(|_| {
@@ -702,7 +700,7 @@ mod test {
             sketch: false,
         };
         let mut sdb = CompactSeqDB::new(spec);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test.fa".to_string(), true);
         let seqs = (0..sdb.seqs.len())
             .map(|sid| sdb.get_seq_by_id(sid as u32))
             .collect::<Vec<Vec<u8>>>();
@@ -721,7 +719,7 @@ mod test {
             sketch: false,
         };
         let mut sdb = CompactSeqDB::new(spec);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test3.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test3.fa".to_string(), true);
         let seqs = (0..sdb.seqs.len())
             .map(|sid| sdb.get_seq_by_id(sid as u32))
             .collect::<Vec<Vec<u8>>>();
@@ -743,7 +741,7 @@ mod test {
             sketch: false,
         };
         let mut sdb = CompactSeqDB::new(spec);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test.fa".to_string(), true);
         let seqs = (0..sdb.seqs.len())
             .map(|sid| sdb.get_seq_by_id(sid as u32))
             .collect::<Vec<Vec<u8>>>();
@@ -763,7 +761,7 @@ mod test {
             sketch: false,
         };
         let mut sdb = CompactSeqDB::new(spec);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test5.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test5.fa".to_string(), true);
         let seqs = (0..sdb.seqs.len())
             .map(|sid| sdb.get_seq_by_id(sid as u32))
             .collect::<Vec<Vec<u8>>>();
@@ -785,7 +783,7 @@ mod test {
             sketch: false,
         };
         let mut sdb = CompactSeqDB::new(spec);
-        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test5.fa".to_string());
+        let _ = sdb.load_seqs_from_fastx("test/test_data/consensus_test5.fa".to_string(), true);
 
         let r = shmmr_sparse_aln_consensus_with_sdb(vec![0], &sdb, 2).unwrap();
         for (s, c) in r[0].clone().1 {

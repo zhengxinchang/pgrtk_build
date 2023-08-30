@@ -55,10 +55,10 @@ fn main() {
             .trim()
             .to_string();
         if fid == 0 {
-            sdb.load_from_fastx(filepath.clone(), args.w, args.k, args.r, args.min_span)
+            sdb.load_from_fastx(filepath.clone(), args.w, args.k, args.r, args.min_span, true)
                 .unwrap_or_else(|_| panic!("fail to read the fastx file: {}", filepath));
         } else {
-            sdb.append_from_fastx(filepath.clone())
+            sdb.append_from_fastx(filepath.clone(), true)
                 .unwrap_or_else(|_| panic!("fail to read the fastx file: {}", filepath));
         }
     });
