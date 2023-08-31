@@ -20,7 +20,7 @@ struct CmdOptions {
     /// path to a ctgmap.json file
     target_len_json_path: String,
     /// the prefix of the output files
-    output_path: String,
+    output_prefix: String,
     /// the prefix of the output files
     #[clap(long, default_value = "Sample")]
     sample_name: String,
@@ -32,7 +32,7 @@ struct CmdOptions {
 type TargetSeqLength = Vec<(u32, String, u32)>;
 
 type ShimmerMatchBlock = (String, u32, u32, String, u32, u32, u32);
-type VariantRecord = (String, u32, u32, u8, String, String);
+type VariantRecord = (String, u32, u32, u8, String, String, String); //t_name, tc, tl, hap_type, tvs, qvs, rec_type
 
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
@@ -62,18 +62,18 @@ fn main() -> Result<(), std::io::Error> {
     let get_variant_recs = |f: BufReader<File>,
                             hap_type: u8|
      -> (
-        Vec<(String, u32, u32, u8, String, String)>,
-        FxHashMap<u32, (Option<ShimmerMatchBlock>, Option<ShimmerMatchBlock>)>,
+        Vec<(String, u32, u32, u8, String, String, String)>,
+        FxHashMap<u32, Vec<ShimmerMatchBlock>>,
     ) {
-        let mut out = Vec::<(String, u32, u32, u8, String, String)>::new();
-        let mut aln_block =
-            FxHashMap::<u32, (Option<ShimmerMatchBlock>, Option<ShimmerMatchBlock>)>::default();
+        let mut out = Vec::<(String, u32, u32, u8, String, String, String)>::new();
+        let mut aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
 
         f.lines().for_each(|line| {
             if let Ok(line) = line {
                 let fields = line.split('\t').collect::<Vec<&str>>();
                 assert!(fields.len() > 3);
-                if fields[1] == "V" {
+                let rec_type = fields[1];
+                if rec_type.starts_with('V') {
                     assert!(fields.len() == 15);
                     let err_msg = format!("fail to parse on {}", line);
                     let t_name = fields[2];
@@ -96,8 +96,11 @@ fn main() -> Result<(), std::io::Error> {
                         hap_type,
                         tvs.to_string(),
                         qvs.to_string(),
+                        rec_type.to_string(),
                     ));
-                } else if fields[1] == "B" || fields[1] == "E" {
+                };
+
+                if rec_type == "M" || rec_type == "V" {
                     let err_msg = format!("fail to parse on {}", line);
                     let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
                     let t_name = fields[2];
@@ -107,63 +110,50 @@ fn main() -> Result<(), std::io::Error> {
                     let qs = fields[6].parse::<u32>().expect(&err_msg);
                     let qe = fields[7].parse::<u32>().expect(&err_msg);
                     let orientation = fields[8].parse::<u32>().expect(&err_msg);
-                    let e = aln_block.entry(aln_block_id).or_default();
-                    match fields[1] {
-                        "B" => {
-                            e.0 = Some((
-                                t_name.to_string(),
-                                ts,
-                                te,
-                                q_name.to_string(),
-                                qs,
-                                qe,
-                                orientation,
-                            ));
-                        }
-                        "E" => {
-                            e.1 = Some((
-                                t_name.to_string(),
-                                ts,
-                                te,
-                                q_name.to_string(),
-                                qs,
-                                qe,
-                                orientation,
-                            ));
-                        }
-                        _ => (),
-                    }
+                    let e = aln_blocks.entry(aln_block_id).or_default();
+                    e.push((
+                        t_name.to_string(),
+                        ts,
+                        te,
+                        q_name.to_string(),
+                        qs,
+                        qe,
+                        orientation,
+                    ));
                 }
             }
         });
-        (out, aln_block)
+        (out, aln_blocks)
     };
-    let (hap0_recs, hap0_aln_block) = get_variant_recs(hap0_alnmap_file, 0);
-    let (hap1_recs, hap1_aln_block) = get_variant_recs(hap1_alnmap_file, 1);
+    let (hap0_recs, hap0_aln_blocks) = get_variant_recs(hap0_alnmap_file, 0);
+    let (hap1_recs, hap1_aln_blocks) = get_variant_recs(hap1_alnmap_file, 1);
 
-    let mut hap0_aln_interval = FxHashMap::<String, IntervalSet<u32>>::default();
-    hap0_aln_block.into_iter().for_each(|(_id, rec_pair)| {
-        if let (Some(b_rec), Some(e_rec)) = rec_pair {
-            let t_name = b_rec.0;
-            let bgn = b_rec.1;
-            let end = e_rec.2;
-            let interval_set = hap0_aln_interval.entry(t_name).or_default();
+    let mut hap0_aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
+    hap0_aln_blocks.into_iter().for_each(|(_id, records)| {
+        records.into_iter().for_each(|rec| {
+            let t_name = rec.0;
+            let bgn = rec.1;
+            let end = rec.2;
+            let interval_set = hap0_aln_intervals.entry(t_name).or_default();
             interval_set.insert(bgn..end);
-        }
+        })
     });
 
-    let mut hap1_aln_interval = FxHashMap::<String, IntervalSet<u32>>::default();
-    hap1_aln_block.into_iter().for_each(|(_id, rec_pair)| {
-        if let (Some(b_rec), Some(e_rec)) = rec_pair {
-            let t_name = b_rec.0;
-            let bgn = b_rec.1;
-            let end = e_rec.2;
-            let interval_set = hap1_aln_interval.entry(t_name).or_default();
+    let mut hap1_aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
+    hap1_aln_blocks.into_iter().for_each(|(_id, records)| {
+        records.into_iter().for_each(|rec| {
+            let t_name = rec.0;
+            let bgn = rec.1;
+            let end = rec.2;
+            let interval_set = hap1_aln_intervals.entry(t_name).or_default();
             interval_set.insert(bgn..end);
-        }
+        })
     });
 
-    let mut out_vcf = BufWriter::new(File::create(Path::new(&args.output_path)).unwrap());
+    let mut out_vcf =
+        BufWriter::new(File::create(Path::new(&args.output_prefix).with_extension("vcf")).unwrap());
+    let mut out_bed =
+        BufWriter::new(File::create(Path::new(&args.output_prefix).with_extension("bed")).unwrap());
     writeln!(out_vcf, "##fileformat=VCFv4.2").expect("fail to write the vcf file");
     target_length.into_iter().for_each(|(_, t_name, t_len)| {
         writeln!(out_vcf, r#"##contig=<ID={},length={}>"#, t_name, t_len)
@@ -171,13 +161,24 @@ fn main() -> Result<(), std::io::Error> {
     });
     writeln!(
         out_vcf,
+        r#"##FILTER=<ID=DUP,Description="duplicated alignment block">"#
+    )
+    .expect("fail to write the vcf file");
+    writeln!(
+        out_vcf,
+        r#"##FILTER=<ID=OVLP,Description="overlapped alignment block">"#
+    )
+    .expect("fail to write the vcf file");
+    writeln!(
+        out_vcf,
         r#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#
     )
     .expect("fail to write the vcf file");
-    
+
     writeln!(
         out_vcf,
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{}", args.sample_name
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t{}",
+        args.sample_name
     )
     .expect("fail to write the vcf file");
 
@@ -189,8 +190,15 @@ fn main() -> Result<(), std::io::Error> {
         let mut al_idx = 0_u32;
 
         let ref_name = records.first().unwrap().0.clone();
+        let mut rec_type = Option::<String>::None;
         records.iter().for_each(|rec| {
-            let (_t_name, ts, tl, ht, vts, vqs) = rec;
+            let (_t_name, ts, tl, ht, vts, vqs, rt) = rec;
+
+            if rec_type.is_none() && (rt == "V_D" || rt == "V_O") {
+                println!("XXX {:?}", rec);
+                rec_type = Some(rt.clone());
+            }
+
             (0..*tl).for_each(|t_pos| {
                 let vts = vts.chars().collect::<Vec<_>>();
                 ref_bases.insert((*ts + t_pos, vts[t_pos as usize]));
@@ -233,7 +241,7 @@ fn main() -> Result<(), std::io::Error> {
             .collect::<Vec<_>>()
             .join(",");
 
-        let h0_al_idx = if let Some(i_set) = hap0_aln_interval.get(&ref_name) {
+        let h0_al_idx = if let Some(i_set) = hap0_aln_intervals.get(&ref_name) {
             if i_set.has_overlap(ts0..ts0 + tl0) {
                 if h0alleles.is_empty() {
                     "0".to_string()
@@ -246,7 +254,7 @@ fn main() -> Result<(), std::io::Error> {
         } else {
             ".".to_string()
         };
-        let h1_al_idx = if let Some(i_set) = hap1_aln_interval.get(&ref_name) {
+        let h1_al_idx = if let Some(i_set) = hap1_aln_intervals.get(&ref_name) {
             if i_set.has_overlap(ts0..ts0 + tl0) {
                 if h1alleles.is_empty() {
                     "0".to_string()
@@ -260,7 +268,7 @@ fn main() -> Result<(), std::io::Error> {
             ".".to_string()
         };
         let gt = [h0_al_idx, h1_al_idx].join("|");
-        (ref_name, ts0, ref_str, query_alleles, gt)
+        (ref_name, ts0, ref_str, query_alleles, gt, rec_type)
     };
 
     let mut variant_records = Vec::<VariantRecord>::new();
@@ -275,30 +283,42 @@ fn main() -> Result<(), std::io::Error> {
     variant_records.sort();
     variant_records
         .into_iter()
-        .for_each(|(ref_name, ts, tl, ht, vts, vqs)| {
+        .for_each(|(ref_name, ts, tl, ht, vts, vqs, rec_type)| {
             if let Some(currrent_vg_end) = currrent_vg_end.clone() {
                 //println!("{} {} {} {} {:?} {}", ref_name, ts, tl, ts + tl ,  currrent_vg_end, variant_group.len()  );
                 if ref_name == currrent_vg_end.0 && ts < currrent_vg_end.1 {
-                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs));
+                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
                 } else if !variant_group.is_empty() {
                     // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
-                    let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt) =
+                    let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
                         convert_to_vcf_record(&variant_group);
+                    let rt = if let Some(g_rec_type) = g_rec_type {
+                        if g_rec_type == "V_D" {
+                            "DUP"
+                        } else if g_rec_type == "V_O" {
+                            "OVLP"
+                        } else {
+                            "PASS"
+                        }
+                    } else {
+                        "PASS"
+                    };
                     writeln!(
                         out_vcf,
-                        "{}\t{}\t.\t{}\t{}\t60\tPASS\t.\tGT\t{}",
+                        "{}\t{}\t.\t{}\t{}\t60\t{}\t.\tGT\t{}",
                         vcfrec_ref_name,
                         ts0 + 1,
                         ref_str,
                         query_alleles,
+                        rt,
                         gt,
                     )
                     .expect("fail to write the vcf file");
                     variant_group.clear();
-                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs));
+                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
                 }
             } else {
-                variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs));
+                variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
                 currrent_vg_end = Some((ref_name, ts + tl));
                 return;
             }
@@ -306,18 +326,101 @@ fn main() -> Result<(), std::io::Error> {
         });
     if !variant_group.is_empty() {
         // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
-        let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt) =
+        let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
             convert_to_vcf_record(&variant_group);
+        let rt = if let Some(g_rec_type) = g_rec_type {
+            if g_rec_type == "V_D" {
+                "DUP"
+            } else if g_rec_type == "V_O" {
+                "OVLP"
+            } else {
+                "PASS"
+            }
+        } else {
+            "PASS"
+        };
         writeln!(
             out_vcf,
-            "{}\t{}\t.\t{}\t{}\t60\tPASS\t.\tGT\t{}",
+            "{}\t{}\t.\t{}\t{}\t60\t{}\t.\tGT\t{}",
             vcfrec_ref_name,
             ts0 + 1,
             ref_str,
             query_alleles,
+            rt,
             gt,
         )
         .expect("fail to write the vcf file");
     };
+
+    let merge_intervals =
+        |intervals: FxHashMap<String, IntervalSet<u32>>| -> FxHashMap<String, IntervalSet<u32>> {
+            intervals
+                .into_iter()
+                .flat_map(|(t_name, i_set)| {
+                    let mut intervals = i_set
+                        .unsorted_iter()
+                        .map(|range| (range.start, range.end))
+                        .collect::<Vec<_>>();
+                    if intervals.is_empty() {
+                        return None;
+                    }
+                    intervals.sort();
+                    let mut merged_intervals = IntervalSet::<u32>::new();
+                    let mut current_range = intervals.first().unwrap().to_owned();
+                    intervals.into_iter().for_each(|(bgn, end)| {
+                        if bgn <= current_range.1 && end > current_range.1 {
+                            current_range.1 = end;
+                        } else if bgn > current_range.1 {
+                            merged_intervals.insert(current_range.0..current_range.1);
+                            current_range = (bgn, end);
+                        }
+                    });
+                    merged_intervals.insert(current_range.0..current_range.1);
+                    Some((t_name, merged_intervals))
+                })
+                .collect()
+        };
+
+    let hap0_aln_merged_intervals: FxHashMap<String, IntervalSet<u32>> =
+        merge_intervals(hap0_aln_intervals);
+
+    let hap1_aln_merged_intervals: FxHashMap<String, IntervalSet<u32>> =
+        merge_intervals(hap1_aln_intervals);
+
+    let mut t_names = hap0_aln_merged_intervals
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    t_names.sort();
+
+    t_names.into_iter().for_each(|t_name| {
+        let hap0_aln_merged_intervals = hap0_aln_merged_intervals.get(&t_name).unwrap();
+        if let Some(hap1_aln_merged_intervals) = hap1_aln_merged_intervals.get(&t_name) {
+            let mut intervals = hap0_aln_merged_intervals
+                .unsorted_iter()
+                .map(|range| (range.start, range.end))
+                .collect::<Vec<_>>();
+            if intervals.is_empty() {
+                return;
+            }
+            intervals.sort();
+            let msg = "can't write the output bed file";
+            intervals.into_iter().for_each(|(bgn, end)| {
+                hap1_aln_merged_intervals.iter(bgn..end).for_each(|range| {
+                    let (bgn1, end1) = (range.start, range.end);
+                    if bgn1 < bgn && end1 < end {
+                        writeln!(out_bed, "{}\t{}\t{}", t_name, bgn, end1).expect(msg);
+                    } else if bgn1 < bgn && end <= end1 {
+                        writeln!(out_bed, "{}\t{}\t{}", t_name, bgn, end).expect(msg);
+                    } else if bgn <= bgn1 && end1 < end {
+                        writeln!(out_bed, "{}\t{}\t{}", t_name, bgn1, end1).expect(msg);
+                    } else if bgn <= bgn1 && end <= end1 {
+                        writeln!(out_bed, "{}\t{}\t{}", t_name, bgn1, end).expect(msg);
+                    }
+                });
+            });
+        }
+    });
+
     Ok(())
 }
