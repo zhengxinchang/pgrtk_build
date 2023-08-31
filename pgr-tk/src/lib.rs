@@ -139,7 +139,7 @@ impl SeqIndexDB {
     /// None or I/O Error
     ///     None
     ///
-    #[pyo3(signature = (filepath, w=80, k=56, r=4, min_span=64))]
+    #[pyo3(signature = (filepath, w=80, k=56, r=4, min_span=64, to_upper_case=true))]
     pub fn load_from_fastx(
         &mut self,
         filepath: String,
@@ -147,20 +147,21 @@ impl SeqIndexDB {
         k: u32,
         r: u32,
         min_span: u32,
+        to_upper_case: bool
     ) -> PyResult<()> {
         self.db_internal
-            .load_from_fastx(filepath, w, k, r, min_span)?;
+            .load_from_fastx(filepath, w, k, r, min_span, to_upper_case)?;
         Ok(())
     }
 
-    #[pyo3(text_signature = "($self)")]
-    pub fn append_from_fastx(&mut self, filepath: String) -> PyResult<()> {
+    #[pyo3(signature = (filepath,to_upper_case=true))]
+    pub fn append_from_fastx(&mut self, filepath: String, to_upper_case: bool) -> PyResult<()> {
         assert!(
             self.db_internal.backend == Backend::FASTX,
             "Only DB created with load_from_fastx() can add data from another fastx file"
         );
         let sdb = self.db_internal.seq_db.as_mut().unwrap();
-        sdb.load_seqs_from_fastx(filepath)?;
+        sdb.load_seqs_from_fastx(filepath, to_upper_case)?;
         Ok(())
     }
 
