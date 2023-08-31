@@ -1,5 +1,6 @@
 const VERSION_STRING: &str = env!("VERSION_STRING");
 use clap::{self, CommandFactory, Parser};
+use iset::set::IntervalSet;
 use pgr_db::aln;
 use pgr_db::ext::{get_fastx_reader, GZFastaReader, SeqIndexDB};
 use pgr_db::fasta_io::{reverse_complement, SeqRec};
@@ -871,6 +872,22 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut vcf_records = Vec::<(u32, u32, String, String, ShimmerMatchBlock)>::new();
 
+    let mut target_duplicate_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
+    target_duplicate_blocks
+        .iter()
+        .for_each(|block: &ShimmerMatchBlock| {
+            let e = target_duplicate_intervals.entry(block.0).or_default();
+            e.insert(block.1..block.2);
+        });
+
+    let mut target_overlap_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
+    target_overlap_blocks
+        .iter()
+        .for_each(|block: &ShimmerMatchBlock| {
+            let e = target_overlap_intervals.entry(block.0).or_default();
+            e.insert(block.1..block.2);
+        });
+
     // the second round loop through all_records to output and tagged variant from duplicate / overlapped blocks
     all_records
         .into_iter()
@@ -974,9 +991,25 @@ fn main() -> Result<(), std::io::Error> {
                         let tn = target_name.get(&t_idx).unwrap();
                         let qn = query_name.get(&q_idx).unwrap();
 
-                        let variant_type = if target_duplicate_blocks.contains(&match_block) {
+                        let dup = if let Some(target_duplicate_intervals) =
+                            target_duplicate_intervals.get(&t_idx)
+                        {
+                            target_duplicate_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+
+                        let ovlp = if let Some(target_overlap_intervals) =
+                            target_overlap_intervals.get(&t_idx)
+                        {
+                            target_overlap_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+
+                        let variant_type = if dup {
                             "V_D"
-                        } else if target_overlap_blocks.contains(&match_block) {
+                        } else if ovlp {
                             "V_O"
                         } else {
                             "V"
@@ -1025,6 +1058,7 @@ fn main() -> Result<(), std::io::Error> {
     .expect("fail to write the vcf file");
     writeln!(out_vcf, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO")
         .expect("fail to write the vcf file");
+
     vcf_records.sort();
     vcf_records
         .into_iter()
