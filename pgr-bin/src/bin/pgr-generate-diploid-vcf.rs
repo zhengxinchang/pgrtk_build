@@ -289,7 +289,7 @@ fn main() -> Result<(), std::io::Error> {
                     variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
                 } else if !variant_group.is_empty() {
                     // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
-                    let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
+                    let (vcf_rec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
                         convert_to_vcf_record(&variant_group);
                     let rt = if let Some(g_rec_type) = g_rec_type {
                         if g_rec_type == "V_D" {
@@ -302,13 +302,15 @@ fn main() -> Result<(), std::io::Error> {
                     } else {
                         "PASS"
                     };
+                    let qv: u32 = if rt != "PASS" { 10 } else { 60 };
                     writeln!(
                         out_vcf,
-                        "{}\t{}\t.\t{}\t{}\t60\t{}\t.\tGT\t{}",
-                        vcfrec_ref_name,
+                        "{}\t{}\t.\t{}\t{}\t{}\t{}\t.\tGT\t{}",
+                        vcf_rec_ref_name,
                         ts0 + 1,
                         ref_str,
                         query_alleles,
+                        qv,
                         rt,
                         gt,
                     )
@@ -325,7 +327,7 @@ fn main() -> Result<(), std::io::Error> {
         });
     if !variant_group.is_empty() {
         // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
-        let (vcfrec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
+        let (vcf_rec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
             convert_to_vcf_record(&variant_group);
         let rt = if let Some(g_rec_type) = g_rec_type {
             if g_rec_type == "V_D" {
@@ -338,13 +340,15 @@ fn main() -> Result<(), std::io::Error> {
         } else {
             "PASS"
         };
+        let qv: u32 = if rt != "PASS" { 10 } else { 60 };
         writeln!(
             out_vcf,
-            "{}\t{}\t.\t{}\t{}\t60\t{}\t.\tGT\t{}",
-            vcfrec_ref_name,
+            "{}\t{}\t.\t{}\t{}\t{}\t{}\t.\tGT\t{}",
+            vcf_rec_ref_name,
             ts0 + 1,
             ref_str,
             query_alleles,
+            qv,
             rt,
             gt,
         )
