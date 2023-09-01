@@ -102,7 +102,7 @@ fn main() -> Result<(), std::io::Error> {
                     ));
                 };
 
-                if rec_type.starts_with('M') || rec_type == "V" {
+                if rec_type.starts_with('M') || rec_type.starts_with('V') {
                     let err_msg = format!("fail to parse on {}", line);
                     let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
                     let t_name = fields[2];
