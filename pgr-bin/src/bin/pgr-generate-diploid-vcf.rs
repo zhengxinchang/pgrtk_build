@@ -64,9 +64,11 @@ fn main() -> Result<(), std::io::Error> {
      -> (
         Vec<(String, u32, u32, u8, String, String, String)>,
         FxHashMap<u32, Vec<ShimmerMatchBlock>>,
+        FxHashMap<u32, Vec<ShimmerMatchBlock>>,
     ) {
-        let mut out = Vec::<(String, u32, u32, u8, String, String, String)>::new();
+        let mut variant_records = Vec::<(String, u32, u32, u8, String, String, String)>::new();
         let mut aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
+        let mut unique_aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
 
         f.lines().for_each(|line| {
             if let Ok(line) = line {
@@ -89,7 +91,7 @@ fn main() -> Result<(), std::io::Error> {
                     // let tt = fields[12].chars().next().expect(&err_msg);
                     let tvs = fields[13];
                     let qvs = fields[14];
-                    out.push((
+                    variant_records.push((
                         t_name.to_string(),
                         tc,
                         tvs.len() as u32,
@@ -120,35 +122,46 @@ fn main() -> Result<(), std::io::Error> {
                         qe,
                         orientation,
                     ));
+                    if rec_type == "M" || rec_type == "V" {
+                        let e = unique_aln_blocks.entry(aln_block_id).or_default();
+                        e.push((
+                            t_name.to_string(),
+                            ts,
+                            te,
+                            q_name.to_string(),
+                            qs,
+                            qe,
+                            orientation,
+                        ));
+                    }
                 }
             }
         });
-        (out, aln_blocks)
+        (variant_records, aln_blocks, unique_aln_blocks)
     };
-    let (hap0_recs, hap0_aln_blocks) = get_variant_recs(hap0_alnmap_file, 0);
-    let (hap1_recs, hap1_aln_blocks) = get_variant_recs(hap1_alnmap_file, 1);
+    let (hap0_recs, hap0_aln_blocks, hap0_unique_aln_blocks) = get_variant_recs(hap0_alnmap_file, 0);
+    let (hap1_recs, hap1_aln_blocks, hap1_unique_aln_blocks) = get_variant_recs(hap1_alnmap_file, 1);
 
-    let mut hap0_aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
-    hap0_aln_blocks.into_iter().for_each(|(_id, records)| {
-        records.into_iter().for_each(|rec| {
-            let t_name = rec.0;
-            let bgn = rec.1;
-            let end = rec.2;
-            let interval_set = hap0_aln_intervals.entry(t_name).or_default();
-            interval_set.insert(bgn..end);
-        })
-    });
+    let blocks_to_intervals = |blocks: FxHashMap<u32, Vec<ShimmerMatchBlock>>| -> FxHashMap<String, IntervalSet<u32>> {
+        let mut aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
+        blocks.into_iter().for_each(|(_block_id, records)| {
+            records.into_iter().for_each(|rec| {
+                let t_name = rec.0;
+                let bgn = rec.1;
+                let end = rec.2;
+                let interval_set = aln_intervals.entry(t_name).or_default();
+                interval_set.insert(bgn..end);
+            })
+        });
+        aln_intervals
+    };
 
-    let mut hap1_aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
-    hap1_aln_blocks.into_iter().for_each(|(_id, records)| {
-        records.into_iter().for_each(|rec| {
-            let t_name = rec.0;
-            let bgn = rec.1;
-            let end = rec.2;
-            let interval_set = hap1_aln_intervals.entry(t_name).or_default();
-            interval_set.insert(bgn..end);
-        })
-    });
+
+    let hap0_aln_intervals = blocks_to_intervals(hap0_aln_blocks);
+    let hap1_aln_intervals = blocks_to_intervals(hap1_aln_blocks);
+    let hap0_unique_aln_intervals = blocks_to_intervals(hap0_unique_aln_blocks);
+    let hap1_unique_aln_intervals = blocks_to_intervals(hap1_unique_aln_blocks);
+    
 
     let mut out_vcf =
         BufWriter::new(File::create(Path::new(&args.output_prefix).with_extension("vcf")).unwrap());
@@ -385,10 +398,10 @@ fn main() -> Result<(), std::io::Error> {
         };
 
     let hap0_aln_merged_intervals: FxHashMap<String, IntervalSet<u32>> =
-        merge_intervals(hap0_aln_intervals);
+        merge_intervals(hap0_unique_aln_intervals);
 
     let hap1_aln_merged_intervals: FxHashMap<String, IntervalSet<u32>> =
-        merge_intervals(hap1_aln_intervals);
+        merge_intervals(hap1_unique_aln_intervals);
 
     let mut t_names = hap0_aln_merged_intervals
         .keys()
