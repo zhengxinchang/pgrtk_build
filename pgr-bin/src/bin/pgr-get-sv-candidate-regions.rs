@@ -608,7 +608,7 @@ fn main() -> Result<(), std::io::Error> {
             match_blocks
                 .iter()
                 .for_each(|&(_aln_idx, match_block, ctg_len, ctg_orientation)| {
-                    let (_t_idx, ts, te, q_idx, qs, qe, orientation) = match_block;
+                    let (t_idx, ts, te, q_idx, qs, qe, orientation) = match_block;
                     //println!("T {} {} {} {} {} {} {}", t_name, ts, te, q_idx, qs, qe, orientation);
                     let next_ctg = query_name.get(&q_idx).unwrap();
                     if ts > cte {
@@ -634,7 +634,7 @@ fn main() -> Result<(), std::io::Error> {
                             "TO:{}>{}:{}:{}:{}:{}:{}",
                             c_ctg, next_ctg, qs, qe, ctg_len, orientation, ctg_orientation
                         );
-                        target_overlap_blocks.insert(match_block);
+                        target_overlap_blocks.insert((t_idx, ts, cte, q_idx, qs, qe, orientation));
                         target_aln_bed_records.push((t_name.clone(), ts, cte, bed_annotation));
                         //println!("O {} {} {} {} {}", t_name, ts, cte, c_ctg, next_ctg);
                         c_ctg = next_ctg;
@@ -1065,9 +1065,9 @@ fn main() -> Result<(), std::io::Error> {
         .for_each(|(t_idx, tc, tvs, qvs, match_block)| {
             let tn = target_name.get(&t_idx).unwrap();
             let filter = if target_duplicate_blocks.contains(&match_block) {
-                "td"
+                "DUP"
             } else if target_overlap_blocks.contains(&match_block) {
-                "to"
+                "OVLP"
             } else {
                 "PASS"
             };

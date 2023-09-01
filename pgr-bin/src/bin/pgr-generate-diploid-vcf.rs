@@ -195,7 +195,6 @@ fn main() -> Result<(), std::io::Error> {
             let (_t_name, ts, tl, ht, vts, vqs, rt) = rec;
 
             if rec_type.is_none() && (rt == "V_D" || rt == "V_O") {
-                println!("XXX {:?}", rec);
                 rec_type = Some(rt.clone());
             }
 
