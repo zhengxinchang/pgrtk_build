@@ -100,7 +100,7 @@ fn main() -> Result<(), std::io::Error> {
                     ));
                 };
 
-                if rec_type == "M" || rec_type == "V" {
+                if rec_type.starts_with('M') || rec_type == "V" {
                     let err_msg = format!("fail to parse on {}", line);
                     let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
                     let t_name = fields[2];
@@ -302,7 +302,7 @@ fn main() -> Result<(), std::io::Error> {
                     } else {
                         "PASS"
                     };
-                    let qv: u32 = if rt != "PASS" { 10 } else { 60 };
+                    let qv: u32 = if rt != "PASS" { 30 } else { 40 };
                     writeln!(
                         out_vcf,
                         "{}\t{}\t.\t{}\t{}\t{}\t{}\t.\tGT\t{}",
@@ -340,7 +340,7 @@ fn main() -> Result<(), std::io::Error> {
         } else {
             "PASS"
         };
-        let qv: u32 = if rt != "PASS" { 10 } else { 60 };
+        let qv: u32 = if rt != "PASS" { 30 } else { 40 };
         writeln!(
             out_vcf,
             "{}\t{}\t.\t{}\t{}\t{}\t{}\t.\tGT\t{}",
