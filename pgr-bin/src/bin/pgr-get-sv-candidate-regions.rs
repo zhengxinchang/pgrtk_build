@@ -950,9 +950,32 @@ fn main() -> Result<(), std::io::Error> {
                     Record::Match((t_idx, ts, te, q_idx, qs, qe, orientation)) => {
                         let tn = target_name.get(&t_idx).unwrap();
                         let qn = query_name.get(&q_idx).unwrap();
+                        let dup = if let Some(target_duplicate_intervals) =
+                            target_duplicate_intervals.get(&t_idx)
+                        {
+                            target_duplicate_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+
+                        let ovlp = if let Some(target_overlap_intervals) =
+                            target_overlap_intervals.get(&t_idx)
+                        {
+                            target_overlap_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+                        let match_type = if dup {
+                            "M_D"
+                        } else if ovlp {
+                            "M_O"
+                        } else {
+                            "M"
+                        };
+
                         format!(
-                            "{:06}\tM\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                            aln_idx, tn, ts, te, qn, qs, qe, orientation
+                            "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                            aln_idx, match_type, tn, ts, te, qn, qs, qe, orientation
                         )
                     }
                     Record::SvCnd((
@@ -1064,9 +1087,23 @@ fn main() -> Result<(), std::io::Error> {
         .into_iter()
         .for_each(|(t_idx, tc, tvs, qvs, match_block)| {
             let tn = target_name.get(&t_idx).unwrap();
-            let filter = if target_duplicate_blocks.contains(&match_block) {
+
+            let dup =
+                if let Some(target_duplicate_intervals) = target_duplicate_intervals.get(&t_idx) {
+                    target_duplicate_intervals.has_overlap(match_block.1..match_block.2)
+                } else {
+                    false
+                };
+
+            let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(&t_idx)
+            {
+                target_overlap_intervals.has_overlap(match_block.1..match_block.2)
+            } else {
+                false
+            };
+            let filter = if dup {
                 "DUP"
-            } else if target_overlap_blocks.contains(&match_block) {
+            } else if ovlp {
                 "OVLP"
             } else {
                 "PASS"
