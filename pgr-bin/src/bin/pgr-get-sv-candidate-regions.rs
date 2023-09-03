@@ -720,7 +720,7 @@ fn main() -> Result<(), std::io::Error> {
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                     t_name,
                     ts - padding as u32,
-                    ts + padding as u32,
+                    te + padding as u32,
                     q_name,
                     qs - padding as u32,
                     qe + padding as u32,
