@@ -5,7 +5,9 @@ use iset::set::IntervalSet;
 use pgr_db::ext::{
     get_principal_bundle_decomposition, PrincipalBundlesWithId, SeqIndexDB, VertexToBundleIdMap,
 };
+use pgr_db::fasta_io::reverse_complement;
 use rustc_hash::{FxHashMap, FxHashSet};
+use serde::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::Path;
@@ -27,6 +29,8 @@ struct CmdOptions {
     #[clap(long, default_value_t = 0)]
     number_of_thread: usize,
 }
+
+#[derive(Debug)]
 struct CandidateRecord {
     target_name: String,
     ts: u32,
@@ -37,6 +41,154 @@ struct CandidateRecord {
     orientation: u8,
     target_sequence: Vec<u8>,
     query_sequence: Vec<u8>,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize, Deserialize)]
+struct BundleSegment {
+    bgn: u32,
+    end: u32,
+    bundle_id: u32,
+    bundle_v_count: u32,
+    bundle_dir: u32,
+    bundle_v_bgn: u32,
+    bundle_v_end: u32,
+    is_repeat: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+enum AlnType {
+    Match,
+    Insertion,
+    Deletion,
+    Begin,
+}
+type AlnPathElement = (usize, usize, AlnType, u32, u32, usize, usize);
+type AlnPath = Vec<AlnPathElement>;
+
+fn align_bundles(
+    q_bundles: &Vec<BundleSegment>,
+    t_bundles: &Vec<BundleSegment>,
+) -> (f32, usize, usize, AlnPath) {
+    let q_count = q_bundles.len();
+    let t_count = t_bundles.len();
+    let mut s_map = FxHashMap::<(usize, usize), i64>::default();
+    let mut t_map = FxHashMap::<(usize, usize), AlnType>::default();
+
+    let mut get_aln_direction_with_best_score =
+        |q_idx: usize, t_idx: usize, s_map: &FxHashMap<(usize, usize), i64>| -> (AlnType, i64) {
+            let mut best = (AlnType::Match, i64::MIN);
+            let q_len = (q_bundles[q_idx].end as i64 - q_bundles[q_idx].bgn as i64).abs();
+            let t_len = (t_bundles[t_idx].end as i64 - t_bundles[t_idx].bgn as i64).abs();
+            let min_len = if q_len > t_len { t_len } else { q_len };
+            let q_b_seg = q_bundles[q_idx];
+            let t_b_seg = t_bundles[t_idx];
+            if q_idx == 0
+                && t_idx == 0
+                && (q_b_seg.bundle_id == t_b_seg.bundle_id)
+                && (q_b_seg.bundle_dir == t_b_seg.bundle_dir)
+            {
+                best = (AlnType::Match, 2 * min_len)
+            } else if q_idx == 0 && t_idx == 0 {
+                best = (AlnType::Begin, 0)
+            };
+
+            if q_idx > 0
+                && t_idx > 0
+                && q_b_seg.bundle_id == t_b_seg.bundle_id
+                && (q_b_seg.bundle_dir == t_b_seg.bundle_dir)
+            {
+                best = (
+                    AlnType::Match,
+                    2 * min_len + s_map.get(&(q_idx - 1, t_idx - 1)).unwrap(),
+                )
+            };
+            if t_idx > 0 {
+                let score = -2 * q_len + s_map.get(&(q_idx, t_idx - 1)).unwrap();
+                if score > best.1 {
+                    best = (AlnType::Deletion, score)
+                };
+            };
+            if q_idx > 0 {
+                let score = -2 * t_len + s_map.get(&(q_idx - 1, t_idx)).unwrap();
+                if score > best.1 {
+                    best = (AlnType::Insertion, score)
+                }
+            }
+            t_map.insert((q_idx, t_idx), best.0);
+            best
+        };
+
+    //let mut best_score = 0;
+    //let mut best_q_idx = 0;
+    //let mut best_t_idx = 0;
+    let mut aln_path = AlnPath::new();
+
+    (0..t_count)
+        .flat_map(|t_idx| (0..q_count).map(move |q_idx| (q_idx, t_idx)))
+        .for_each(|(q_idx, t_idx)| {
+            //println!("{} {}", q_idx, t_idx);
+            let (_, score) = get_aln_direction_with_best_score(q_idx, t_idx, &s_map);
+            s_map.insert((q_idx, t_idx), score);
+            /*
+            if score > best_score {
+                best_score = score;
+                best_q_idx = q_idx;
+                best_t_idx = t_idx;
+            }
+            */
+        });
+    let mut q_idx = q_count - 1;
+    let mut t_idx = t_count - 1;
+    let mut diff_len = 0_usize;
+    let mut max_len = 1_usize;
+    while let Some(aln_type) = t_map.get(&(q_idx, t_idx)) {
+        let qq_idx = q_idx;
+        let tt_idx = t_idx;
+        let (diff_len_delta, max_len_delta) = match aln_type {
+            AlnType::Match => {
+                let q_len = (q_bundles[q_idx].end as i64 - q_bundles[q_idx].bgn as i64).abs();
+                let t_len = (t_bundles[t_idx].end as i64 - t_bundles[t_idx].bgn as i64).abs();
+                let diff_len_delta = (q_len - t_len).unsigned_abs() as usize;
+                let max_len_delata = if q_len > t_len {
+                    q_len as usize
+                } else {
+                    t_len as usize
+                };
+                q_idx -= 1;
+                t_idx -= 1;
+                (diff_len_delta, max_len_delata)
+            }
+            AlnType::Insertion => {
+                let q_len = (q_bundles[q_idx].end as i64 - q_bundles[q_idx].bgn as i64).abs();
+                q_idx -= 1;
+                (q_len as usize, q_len as usize)
+            }
+            AlnType::Deletion => {
+                let t_len = (t_bundles[t_idx].end as i64 - t_bundles[t_idx].bgn as i64).abs();
+                t_idx -= 1;
+                (t_len as usize, t_len as usize)
+            }
+            AlnType::Begin => break,
+        };
+        diff_len += diff_len_delta;
+        max_len += max_len_delta;
+        aln_path.push((
+            qq_idx,
+            tt_idx,
+            *aln_type,
+            q_bundles[qq_idx].bundle_id,
+            t_bundles[tt_idx].bundle_id,
+            diff_len_delta,
+            max_len_delta,
+        ));
+    }
+    aln_path.reverse();
+    (
+        diff_len as f32 / max_len as f32,
+        diff_len,
+        max_len,
+        aln_path,
+    )
 }
 
 #[allow(clippy::type_complexity)]
@@ -143,7 +295,12 @@ fn main() -> Result<(), std::io::Error> {
             let qe = fields[5].parse::<u32>().expect(paser_err_msg);
             let orientation = fields[6].parse::<u8>().expect(paser_err_msg);
             let target_sequence = fields[7].into();
-            let query_sequence = fields[8].into();
+            let query_sequence = if orientation == 0 {
+                fields[8].into()
+            } else {
+                reverse_complement(fields[8].as_bytes())
+            };
+
             let rec = CandidateRecord {
                 target_name,
                 ts,
@@ -159,17 +316,18 @@ fn main() -> Result<(), std::io::Error> {
         }
     });
 
-    let mut outpu_bed_file =
-    BufWriter::new(File::create(Path::new(&args.output_prefix).with_extension("bed")).expect("can't create the output file"));
-
+    let mut outpu_bed_file = BufWriter::new(
+        File::create(Path::new(&args.output_prefix).with_extension("bed"))
+            .expect("can't create the output file"),
+    );
 
     paired_seq_records.into_iter().for_each(|rec| {
         let mut sdb = SeqIndexDB::new();
         let seq_list = vec![
-            (rec.target_name, rec.target_sequence),
-            (rec.query_name, rec.query_sequence),
+            (rec.target_name.clone(), rec.target_sequence),
+            (rec.query_name.clone(), rec.query_sequence),
         ];
-        let (w, k, r, min_span, min_cov, min_branch_size) = (17u32, 31u32, 1u32, 0u32, 0u32, 0u32);
+        let (w, k, r, min_span, min_cov, min_branch_size) = (31u32, 23u32, 1u32, 13u32, 0u32, 0u32);
         sdb.load_from_seq_list(seq_list, None, w, k, r, min_span)
             .expect("can't load the sequences");
         let (principal_bundles_with_id, vertex_to_bundle_id_direction_pos) = sdb
@@ -196,8 +354,8 @@ fn main() -> Result<(), std::io::Error> {
 
         let mut repeat_count = FxHashMap::<u32, Vec<u32>>::default();
         let mut non_repeat_count = FxHashMap::<u32, Vec<u32>>::default();
+        let mut sid_to_bundle_segs = FxHashMap::<u32, Vec<BundleSegment>>::default();
 
-      
         seq_info.iter().for_each(|(sid, sdata)| {
             let (ctg, _src, _len) = sdata;
             let smps = sid_smps.get(sid).unwrap();
@@ -211,6 +369,7 @@ fn main() -> Result<(), std::io::Error> {
                 let bid = p[0].1;
                 *ctg_bundle_count.entry(bid).or_insert_with(|| 0) += 1;
             });
+            let mut bundle_segs = Vec::<BundleSegment>::new();
             smp_partitions.into_iter().for_each(|p| {
                 let b = p[0].0 .2;
                 let e = p[p.len() - 1].0 .3 + k;
@@ -221,29 +380,76 @@ fn main() -> Result<(), std::io::Error> {
                         .entry(*sid)
                         .or_insert_with(Vec::new)
                         .push(e - b - k);
-                    "R"
+                    true
                 } else {
                     non_repeat_count
                         .entry(*sid)
                         .or_insert_with(Vec::new)
                         .push(e - b - k);
-                    "U"
+                    false
                 };
-                let _ = writeln!(
-                    outpu_bed_file,
-                    "{}\t{}\t{}\t{}:{}:{}:{}:{}:{}",
-                    ctg,
-                    b,
-                    e,
-                    bid,
-                    bid_to_size[&bid],
-                    direction,
-                    p[0].3,
-                    p[p.len() - 1].3,
-                    is_repeat
-                );
+                bundle_segs.push(BundleSegment {
+                    bgn: b,
+                    end: e,
+                    bundle_id: bid as u32,
+                    bundle_v_count: bid_to_size[&bid] as u32,
+                    bundle_dir: direction,
+                    bundle_v_bgn: p[0].3 as u32,
+                    bundle_v_end: p[p.len() - 1].3 as u32,
+                    is_repeat,
+                });
+                // println!(
+                //     "{}\t{}\t{}\t{}:{}:{}:{}:{}:{}",
+                //     ctg,
+                //     b,
+                //     e,
+                //     bid,
+                //     bid_to_size[&bid],
+                //     direction,
+                //     p[0].3,
+                //     p[p.len() - 1].3,
+                //     is_repeat
+                // );
             });
+
+            sid_to_bundle_segs.insert(*sid, bundle_segs);
         });
+
+        let target_bundles = sid_to_bundle_segs.get(&0).unwrap();
+        let query_bundles = sid_to_bundle_segs.get(&1).unwrap();
+        let (_dist0, _diff_len0, _max_len0, aln_path) =
+            align_bundles(query_bundles, target_bundles);
+        println!("## {} {} {} {} {} {} {}", rec.target_name, rec.ts, rec.te, rec.query_name, rec.qs, rec.qe, rec.orientation);
+        aln_path.into_iter().for_each(|elm| {
+            let (qb_idx, tb_idx, aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
+            let t_seg = target_bundles[tb_idx];
+            let q_seg = query_bundles[qb_idx];
+            let ts = t_seg.bgn + rec.ts;
+            let te = t_seg.end + rec.ts;
+
+            let qs = if rec.orientation == 0 { q_seg.bgn + rec.qs } else { rec.qe - q_seg.end };
+            let qe = if rec.orientation == 0 { q_seg.end + rec.qs } else { rec.qe - q_seg.bgn };
+            let target_name = rec.target_name.clone();
+            let query_name = rec.query_name.clone();
+            println!(
+                "{} {} {} {} {} {} {} {} {} {} {} {:?} {:?} {:?}",
+                target_name,
+                ts,
+                te,
+                query_name,
+                qs,
+                qe,
+                rec.orientation,
+                t_seg.bundle_id,
+                t_seg.bundle_dir,
+                q_seg.bundle_id,
+                q_seg.bundle_dir,
+                aln_type,
+                t_seg.is_repeat,
+                q_seg.is_repeat
+            )
+        });
+       
     });
 
     Ok(())
