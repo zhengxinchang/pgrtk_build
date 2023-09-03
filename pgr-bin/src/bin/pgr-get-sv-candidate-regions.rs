@@ -39,7 +39,7 @@ struct CmdOptions {
     min_span: u32,
 
     /// the gap penalty factor for sparse alignments in the SHIMMER space
-    #[clap(long, short, default_value_t = 0.025)]
+    #[clap(long, default_value_t = 0.025)]
     gap_penalty_factor: f32,
 
     /// the max gap length allowed in the alignment blocks
@@ -50,9 +50,9 @@ struct CmdOptions {
     #[clap(long, default_value_t = 8)]
     max_aln_chain_span: u32,
 
-    /// generate fasta files for the sequence covering the SV candidates
-    #[clap(long, default_value_t = false)]
-    generate_sv_candidate_fasta_file: bool,
+    /// if specified, generate fasta files for the sequence covering the SV candidates
+    #[clap(long, short, default_value_t = false)]
+    sv_candidate_seq_file: bool,
 }
 
 type ShimmerMatchBlock = (u32, u32, u32, u32, u32, u32, u32);
@@ -223,16 +223,9 @@ fn main() -> Result<(), std::io::Error> {
     let mut out_ctgsv = BufWriter::new(
         File::create(Path::new(&args.output_prefix).with_extension("ctgsv.bed")).unwrap(),
     );
-    let mut out_sv_qry_seq_file = if args.generate_sv_candidate_fasta_file {
+    let mut out_sv_seq_file = if args.sv_candidate_seq_file {
         Some(BufWriter::new(
-            File::create(Path::new(&args.output_prefix).with_extension("svcnd.q.fasta")).unwrap(),
-        ))
-    } else {
-        None
-    };
-    let mut out_sv_ref_seq_file = if args.generate_sv_candidate_fasta_file {
-        Some(BufWriter::new(
-            File::create(Path::new(&args.output_prefix).with_extension("svcnd.ref.fasta")).unwrap(),
+            File::create(Path::new(&args.output_prefix).with_extension("svcnd.seqs")).unwrap(),
         ))
     } else {
         None
@@ -711,51 +704,32 @@ fn main() -> Result<(), std::io::Error> {
             );
             let t_name = target_name.get(t_idx).unwrap();
             in_aln_sv_and_bed_records.push((t_name.clone(), ts + 1, te + 1, bed_annotation));
-            if let Some(out_sv_qry_seq_file) = out_sv_qry_seq_file.as_mut() {
+            if let Some(out_sv_seq_file) = out_sv_seq_file.as_mut() {
+                let padding: usize = 0;
+                let t_seq_slice = &ref_seq_index_db
+                    .get_sub_seq_by_id(*t_idx, *ts as usize - padding, *te as usize + padding)
+                    .unwrap()[..];
+                let t_seq = String::from_utf8_lossy(t_seq_slice);
+                let offset: usize = if *orientation == 1 { 2 } else { 0 };
+                let q_seq = String::from_utf8_lossy(
+                    &query_seqs[*q_idx as usize].seq
+                        [(*qs as usize - offset - padding)..(*qe as usize - offset + padding)],
+                );
                 writeln!(
-                    out_sv_qry_seq_file,
-                    ">{}:{}-{}:{}@{}:{}-{}",
-                    q_name, qs, qe, orientation, t_name, ts, te
+                    out_sv_seq_file,
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    t_name,
+                    ts - padding as u32,
+                    ts + padding as u32,
+                    q_name,
+                    qs - padding as u32,
+                    qe + padding as u32,
+                    orientation,
+                    t_seq,
+                    q_seq
                 )
                 .expect("writing fasta for SV candidate fail");
-                if *orientation == 1 {
-                    writeln!(
-                        out_sv_qry_seq_file,
-                        "{}",
-                        String::from_utf8_lossy(&reverse_complement(
-                            &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
-                        ))
-                    )
-                    .expect("writing fasta for SV candidate fail");
-                } else {
-                    writeln!(
-                        out_sv_qry_seq_file,
-                        "{}",
-                        String::from_utf8_lossy(
-                            &query_seqs[*q_idx as usize].seq[*qs as usize..*qe as usize]
-                        )
-                    )
-                    .expect("writing fasta for SV candidate fail");
-                };
             };
-            if let Some(out_sv_ref_seq_file) = out_sv_ref_seq_file.as_mut() {
-                writeln!(
-                    out_sv_ref_seq_file,
-                    ">{}:{}-{}@{}:{}-{}:{}",
-                    t_name, ts, te, q_name, qs, qe, orientation
-                )
-                .expect("writing fasta for SV candidate fail");
-                writeln!(
-                    out_sv_ref_seq_file,
-                    "{}",
-                    String::from_utf8_lossy(
-                        &ref_seq_index_db
-                            .get_sub_seq_by_id(*t_idx, *ts as usize, *te as usize)
-                            .unwrap()[..]
-                    )
-                )
-                .expect("writing fasta for SV candidate fail");
-            }
         },
     );
 
