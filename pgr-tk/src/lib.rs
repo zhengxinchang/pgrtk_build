@@ -446,7 +446,7 @@ impl SeqIndexDB {
     /// max_query_count : int
     ///    only use the shimmer pairs that less than the ``max_count`` in the query sequence for sparse dynamic programming
     ///
-    /// max_query_count : int
+    /// max_target_count : int
     ///    only use the shimmer pairs that less than the ``max_count`` in the target sequence for sparse dynamic programming
     ///
     /// max_aln_span : int

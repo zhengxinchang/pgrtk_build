@@ -232,7 +232,11 @@ impl SeqIndexDB {
             sketch: false,
         };
         self.backend = Backend::MEMORY;
-        let source = Some(source.unwrap().to_string());
+        let source = if let Some(source) = source {
+            Some(source.to_string())
+        } else {
+            Some("Memory".to_string())
+        };
         let mut sdb = seq_db::CompactSeqDB::new(spec.clone());
         let seq_vec = seq_list
             .into_iter()
