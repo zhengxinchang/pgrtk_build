@@ -396,8 +396,8 @@ fn main() -> Result<(), std::io::Error> {
             *ctg_bundle_count.entry(bid).or_insert_with(|| 0) += 1;
         });
         smp_partitions.into_iter().for_each(|p| {
-            let b = p[0].0 .2;
-            let e = p[p.len() - 1].0 .3 + args.k;
+            let b = p[0].0 .2 - args.k;
+            let e = p[p.len() - 1].0 .3;
             let bid = p[0].1;
             let direction = p[0].2;
             let is_repeat = if *ctg_bundle_count.get(&bid).unwrap_or(&0) > 1 {
