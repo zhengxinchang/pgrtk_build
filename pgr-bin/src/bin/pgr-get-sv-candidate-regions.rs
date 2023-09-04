@@ -693,14 +693,51 @@ fn main() -> Result<(), std::io::Error> {
             query_aln_bed_records.push((q_name.clone(), cqe, q_len, bed_annotation));
         });
 
+    let mut target_duplicate_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
+    target_duplicate_blocks
+        .iter()
+        .for_each(|block: &ShimmerMatchBlock| {
+            let e = target_duplicate_intervals.entry(block.0).or_default();
+            e.insert(block.1..block.2);
+        });
+
+    let mut target_overlap_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
+    target_overlap_blocks
+        .iter()
+        .for_each(|block: &ShimmerMatchBlock| {
+            let e = target_overlap_intervals.entry(block.0).or_default();
+            e.insert(block.1..block.2);
+        });
+
     let mut in_aln_sv_and_bed_records = Vec::<(String, u32, u32, String)>::new();
     in_aln_sv_cnd_records.sort();
     in_aln_sv_cnd_records.iter().for_each(
         |((t_idx, ts, te, q_idx, qs, qe, orientation), diff_type, ctg_orientation)| {
             let q_name = query_name.get(q_idx).unwrap();
+            let dup =
+                if let Some(target_duplicate_intervals) = target_duplicate_intervals.get(t_idx) {
+                    target_duplicate_intervals.has_overlap(ts..te)
+                } else {
+                    false
+                };
+
+            let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(t_idx)
+            {
+                target_overlap_intervals.has_overlap(ts..te)
+            } else {
+                false
+            };
+            let svc_type = if dup {
+                "SVC_D"
+            } else if ovlp {
+                "SVC_O"
+            } else {
+                "SVC"
+            };
+
             let bed_annotation = format!(
-                "SVC:{}:{}:{}:{}:{}:{}",
-                q_name, qs, qe, orientation, ctg_orientation, diff_type
+                "{}:{}:{}-{}:{}:{}:{}",
+                svc_type, q_name, qs, qe, orientation, ctg_orientation, diff_type
             );
             let t_name = target_name.get(t_idx).unwrap();
             in_aln_sv_and_bed_records.push((t_name.clone(), ts + 1, te + 1, bed_annotation));
@@ -717,7 +754,8 @@ fn main() -> Result<(), std::io::Error> {
                 );
                 writeln!(
                     out_sv_seq_file,
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                    svc_type,
                     t_name,
                     ts - padding as u32,
                     te + padding as u32,
@@ -725,6 +763,7 @@ fn main() -> Result<(), std::io::Error> {
                     qs - padding as u32,
                     qe + padding as u32,
                     orientation,
+                    diff_type,
                     t_seq,
                     q_seq
                 )
@@ -846,22 +885,6 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut vcf_records = Vec::<(u32, u32, String, String, ShimmerMatchBlock)>::new();
 
-    let mut target_duplicate_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
-    target_duplicate_blocks
-        .iter()
-        .for_each(|block: &ShimmerMatchBlock| {
-            let e = target_duplicate_intervals.entry(block.0).or_default();
-            e.insert(block.1..block.2);
-        });
-
-    let mut target_overlap_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
-    target_overlap_blocks
-        .iter()
-        .for_each(|block: &ShimmerMatchBlock| {
-            let e = target_overlap_intervals.entry(block.0).or_default();
-            e.insert(block.1..block.2);
-        });
-
     // the second round loop through all_records to output and tagged variant from duplicate / overlapped blocks
     all_records
         .into_iter()
@@ -967,9 +990,33 @@ fn main() -> Result<(), std::io::Error> {
 
                         let tn = target_name.get(&t_idx).unwrap();
                         let qn = query_name.get(&q_idx).unwrap();
+                        let dup = if let Some(target_duplicate_intervals) =
+                            target_duplicate_intervals.get(&t_idx)
+                        {
+                            target_duplicate_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+
+                        let ovlp = if let Some(target_overlap_intervals) =
+                            target_overlap_intervals.get(&t_idx)
+                        {
+                            target_overlap_intervals.has_overlap(ts..te)
+                        } else {
+                            false
+                        };
+
+                        let svc_type = if dup {
+                            "S_D"
+                        } else if ovlp {
+                            "S_O"
+                        } else {
+                            "S"
+                        };
 
                         format!(
-                            "{:06}\tS\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                            "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                            svc_type,
                             aln_idx,
                             tn,
                             ts,

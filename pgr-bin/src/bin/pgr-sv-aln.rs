@@ -32,6 +32,7 @@ struct CmdOptions {
 
 #[derive(Debug)]
 struct CandidateRecord {
+    svc_type: String,
     target_name: String,
     ts: u32,
     te: u32,
@@ -39,6 +40,7 @@ struct CandidateRecord {
     qs: u32,
     qe: u32,
     orientation: u8,
+    aln_type: String,
     target_sequence: Vec<u8>,
     query_sequence: Vec<u8>,
 }
@@ -286,22 +288,25 @@ fn main() -> Result<(), std::io::Error> {
         if let Ok(line) = line {
             let fields = line.split('\t').collect::<Vec<&str>>();
             let paser_err_msg = "can't parse the input file";
-            assert!(fields.len() == 9);
-            let target_name = fields[0].to_string();
-            let ts = fields[1].parse::<u32>().expect(paser_err_msg);
-            let te = fields[2].parse::<u32>().expect(paser_err_msg);
-            let query_name = fields[3].to_string();
-            let qs = fields[4].parse::<u32>().expect(paser_err_msg);
-            let qe = fields[5].parse::<u32>().expect(paser_err_msg);
-            let orientation = fields[6].parse::<u8>().expect(paser_err_msg);
-            let target_sequence = fields[7].into();
+            assert!(fields.len() == 11);
+            let svc_type = fields[0].to_string();
+            let target_name = fields[1].to_string();
+            let ts = fields[2].parse::<u32>().expect(paser_err_msg);
+            let te = fields[3].parse::<u32>().expect(paser_err_msg);
+            let query_name = fields[4].to_string();
+            let qs = fields[5].parse::<u32>().expect(paser_err_msg);
+            let qe = fields[6].parse::<u32>().expect(paser_err_msg);
+            let orientation = fields[7].parse::<u8>().expect(paser_err_msg);
+            let aln_type = fields[8].to_string();
+            let target_sequence = fields[9].into();
             let query_sequence = if orientation == 0 {
-                fields[8].into()
+                fields[10].into()
             } else {
-                reverse_complement(fields[8].as_bytes())
+                reverse_complement(fields[10].as_bytes())
             };
 
             let rec = CandidateRecord {
+                svc_type,
                 target_name,
                 ts,
                 te,
@@ -309,6 +314,7 @@ fn main() -> Result<(), std::io::Error> {
                 qs,
                 qe,
                 orientation,
+                aln_type,
                 target_sequence,
                 query_sequence,
             };
@@ -372,7 +378,7 @@ fn main() -> Result<(), std::io::Error> {
             let mut bundle_segs = Vec::<BundleSegment>::new();
             smp_partitions.into_iter().for_each(|p| {
                 let b = p[0].0 .2;
-                let e = p[p.len() - 1].0 .3 + k;
+                let e = p[p.len() - 1].0 .3;
                 let bid = p[0].1;
                 let direction = p[0].2;
                 let is_repeat = if *ctg_bundle_count.get(&bid).unwrap_or(&0) > 1 {
@@ -419,7 +425,10 @@ fn main() -> Result<(), std::io::Error> {
         let query_bundles = sid_to_bundle_segs.get(&1).unwrap();
         let (_dist0, _diff_len0, _max_len0, aln_path) =
             align_bundles(query_bundles, target_bundles);
-        println!("## {} {} {} {} {} {} {}", rec.target_name, rec.ts, rec.te, rec.query_name, rec.qs, rec.qe, rec.orientation);
+        println!(
+            "##\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            rec.svc_type, rec.target_name, rec.ts, rec.te, rec.query_name, rec.qs, rec.qe, rec.orientation, rec.aln_type
+        );
         aln_path.into_iter().for_each(|elm| {
             let (qb_idx, tb_idx, aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
             let t_seg = target_bundles[tb_idx];
@@ -427,8 +436,16 @@ fn main() -> Result<(), std::io::Error> {
             let ts = t_seg.bgn + rec.ts;
             let te = t_seg.end + rec.ts;
 
-            let qs = if rec.orientation == 0 { q_seg.bgn + rec.qs } else { rec.qe - q_seg.end };
-            let qe = if rec.orientation == 0 { q_seg.end + rec.qs } else { rec.qe - q_seg.bgn };
+            let qs = if rec.orientation == 0 {
+                q_seg.bgn + rec.qs
+            } else {
+                rec.qe - q_seg.end
+            };
+            let qe = if rec.orientation == 0 {
+                q_seg.end + rec.qs
+            } else {
+                rec.qe - q_seg.bgn
+            };
             let target_name = rec.target_name.clone();
             let query_name = rec.query_name.clone();
             println!(
@@ -449,7 +466,6 @@ fn main() -> Result<(), std::io::Error> {
                 q_seg.is_repeat
             )
         });
-       
     });
 
     Ok(())
