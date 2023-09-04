@@ -55,7 +55,7 @@ struct CmdOptions {
     sv_candidate_seq_file: bool,
 }
 
-type ShimmerMatchBlock = (u32, u32, u32, u32, u32, u32, u32);
+type ShimmerMatchBlock = (u32, u32, u32, u32, u32, u32, u32); //t_idx, ts, ted, q_idx, ts, te, orientation
 
 #[derive(Clone)]
 enum Record {
@@ -70,6 +70,8 @@ enum Record {
 type AlignSegment = ((u32, u32, u8), (u32, u32, u8));
 
 type AlignSegments = Vec<AlignSegment>;
+
+type AlignmentResult = Vec<(u32, u32, char, String, String)>;
 
 #[derive(Clone)]
 enum AlnDiff {
@@ -173,7 +175,6 @@ fn filter_aln_rev(aln_segs: &AlignSegments) -> Vec<((u32, u32), (u32, u32))> {
     rtn
 }
 
-type AlignmentResult = Vec<(u32, u32, char, String, String)>;
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
     let args = CmdOptions::parse();
@@ -412,8 +413,10 @@ fn main() -> Result<(), std::io::Error> {
                             })
                             .filter(|v| !v.is_empty())
                             .collect::<Vec<_>>();
+
                         let (_, ctg_orientation) =
                             target_id_to_orientation_len_count.get(&t_idx).unwrap();
+
                         mapped_region_aln
                             .into_iter()
                             .map(|v| {
@@ -721,8 +724,7 @@ fn main() -> Result<(), std::io::Error> {
                     false
                 };
 
-            let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(t_idx)
-            {
+            let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(t_idx) {
                 target_overlap_intervals.has_overlap(ts..te)
             } else {
                 false
@@ -741,34 +743,7 @@ fn main() -> Result<(), std::io::Error> {
             );
             let t_name = target_name.get(t_idx).unwrap();
             in_aln_sv_and_bed_records.push((t_name.clone(), ts + 1, te + 1, bed_annotation));
-            if let Some(out_sv_seq_file) = out_sv_seq_file.as_mut() {
-                let padding: usize = 0;
-                let t_seq_slice = &ref_seq_index_db
-                    .get_sub_seq_by_id(*t_idx, *ts as usize - padding, *te as usize + padding)
-                    .unwrap()[..];
-                let t_seq = String::from_utf8_lossy(t_seq_slice);
-                let offset: usize = if *orientation == 1 { 2 } else { 0 };
-                let q_seq = String::from_utf8_lossy(
-                    &query_seqs[*q_idx as usize].seq
-                        [(*qs as usize - offset - padding)..(*qe as usize - offset + padding)],
-                );
-                writeln!(
-                    out_sv_seq_file,
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                    svc_type,
-                    t_name,
-                    ts - padding as u32,
-                    te + padding as u32,
-                    q_name,
-                    qs - padding as u32,
-                    qe + padding as u32,
-                    orientation,
-                    diff_type,
-                    t_seq,
-                    q_seq
-                )
-                .expect("writing fasta for SV candidate fail");
-            };
+
         },
     );
 
@@ -1014,10 +989,10 @@ fn main() -> Result<(), std::io::Error> {
                             "S"
                         };
 
-                        format!(
+                        let out = format!(
                             "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                            svc_type,
                             aln_idx,
+                            svc_type,
                             tn,
                             ts,
                             te,
@@ -1027,7 +1002,30 @@ fn main() -> Result<(), std::io::Error> {
                             orientation,
                             ctg_orientation,
                             diff_type
-                        )
+                        );
+
+                        if let Some(out_sv_seq_file) = out_sv_seq_file.as_mut() {
+                            let t_seq_slice = &ref_seq_index_db
+                                .get_sub_seq_by_id(t_idx, ts as usize, te as usize)
+                                .unwrap()[..];
+                            let t_seq = String::from_utf8_lossy(t_seq_slice);
+                            let offset: usize = if orientation == 1 { 2 } else { 0 };
+                            let q_seq = String::from_utf8_lossy(
+                                &query_seqs[q_idx as usize].seq
+                                    [(qs as usize - offset)..(qe as usize - offset)],
+                            );
+
+                            writeln!(
+                                out_sv_seq_file,
+                                "{}\t{}\t{}",
+                                out,
+                                t_seq,
+                                q_seq
+                            )
+                            .expect("writing fasta for SV candidate fail");
+                        };
+
+                        out 
                     }
                     Record::Variant(match_block, td, qd, tc, vt, tvs, qvs) => {
                         let (t_idx, ts, te, q_idx, qs, qe, orientation) = match_block;
