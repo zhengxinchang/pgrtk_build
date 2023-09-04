@@ -272,6 +272,15 @@ fn group_smps_by_principle_bundle_id(
     rtn_partitions
 }
 
+struct ShimmerConfig {
+    w: u32,
+    k: u32,
+    r: u32,
+    min_span: u32,
+    min_cov: u32,
+    min_branch_size: u32,
+}
+
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
     let args = CmdOptions::parse();
@@ -333,13 +342,28 @@ fn main() -> Result<(), std::io::Error> {
             (rec.target_name.clone(), rec.target_sequence),
             (rec.query_name.clone(), rec.query_sequence),
         ];
-        let (w, k, r, min_span, min_cov, min_branch_size) = (31u32, 23u32, 1u32, 13u32, 0u32, 0u32);
-        sdb.load_from_seq_list(seq_list, None, w, k, r, min_span)
-            .expect("can't load the sequences");
+
+        let shmmr_cfg = ShimmerConfig {
+            w: 31,
+            k: 23,
+            r: 1,
+            min_span: 13,
+            min_cov: 0,
+            min_branch_size: 0,
+        };
+        sdb.load_from_seq_list(
+            seq_list,
+            None,
+            shmmr_cfg.w,
+            shmmr_cfg.k,
+            shmmr_cfg.r,
+            shmmr_cfg.min_span,
+        )
+        .expect("can't load the sequences");
         let (principal_bundles_with_id, vertex_to_bundle_id_direction_pos) = sdb
             .get_principal_bundles_with_id(
-                min_cov as usize,
-                min_branch_size as usize,
+                shmmr_cfg.min_cov as usize,
+                shmmr_cfg.min_branch_size as usize,
                 Some(vec![0, 1]),
             );
         let sid_smps = get_principal_bundle_decomposition(&vertex_to_bundle_id_direction_pos, &sdb);
@@ -377,7 +401,7 @@ fn main() -> Result<(), std::io::Error> {
             });
             let mut bundle_segs = Vec::<BundleSegment>::new();
             smp_partitions.into_iter().for_each(|p| {
-                let b = p[0].0 .2;
+                let b = p[0].0 .2 - shmmr_cfg.k;
                 let e = p[p.len() - 1].0 .3;
                 let bid = p[0].1;
                 let direction = p[0].2;
@@ -385,13 +409,13 @@ fn main() -> Result<(), std::io::Error> {
                     repeat_count
                         .entry(*sid)
                         .or_insert_with(Vec::new)
-                        .push(e - b - k);
+                        .push(e - b - shmmr_cfg.k);
                     true
                 } else {
                     non_repeat_count
                         .entry(*sid)
                         .or_insert_with(Vec::new)
-                        .push(e - b - k);
+                        .push(e - b - shmmr_cfg.k);
                     false
                 };
                 bundle_segs.push(BundleSegment {
@@ -427,7 +451,15 @@ fn main() -> Result<(), std::io::Error> {
             align_bundles(query_bundles, target_bundles);
         println!(
             "##\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            rec.svc_type, rec.target_name, rec.ts, rec.te, rec.query_name, rec.qs, rec.qe, rec.orientation, rec.aln_type
+            rec.svc_type,
+            rec.target_name,
+            rec.ts,
+            rec.te,
+            rec.query_name,
+            rec.qs,
+            rec.qe,
+            rec.orientation,
+            rec.aln_type
         );
         aln_path.into_iter().for_each(|elm| {
             let (qb_idx, tb_idx, aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
