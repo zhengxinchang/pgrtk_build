@@ -275,13 +275,13 @@ pub fn wfa_aln_pair_map(aln_target_str: &str, aln_query_str: &str) -> Vec<(u32, 
         .map(|(&tb, &qb)| {
             let mut t = '-';
             let new_t_pos = if tb == b'-' {
-                t = 'I';
+                t = 'D';
                 t_pos
             } else {
                 t_pos + 1
             };
             let new_q_pos = if qb == b'-' {
-                t = 'D';
+                t = 'I';
                 q_pos
             } else {
                 q_pos + 1
@@ -317,8 +317,8 @@ pub fn get_variants_from_aln_pair_map(
         let t_len = t_variant_segment.len();
         let q_len = q_variant_segment.len();
         let v_type = match t_len.cmp(&q_len) {
-            Ordering::Greater => 'I',
-            Ordering::Less => 'D',
+            Ordering::Greater => 'D',
+            Ordering::Less => 'I',
             Ordering::Equal => 'X',
         };
 
@@ -330,17 +330,17 @@ pub fn get_variants_from_aln_pair_map(
                 t_variant_segment,
                 q_variant_segment,
             )),
-            'I' => Some((
-                previous_match.0,
-                previous_match.1,
-                'I',
-                [previous_match.3.to_string(), t_variant_segment].join(""),
-                [previous_match.4.to_string(), q_variant_segment].join(""),
-            )),
             'D' => Some((
                 previous_match.0,
                 previous_match.1,
                 'D',
+                [previous_match.3.to_string(), t_variant_segment].join(""),
+                [previous_match.4.to_string(), q_variant_segment].join(""),
+            )),
+            'I' => Some((
+                previous_match.0,
+                previous_match.1,
+                'I',
                 [previous_match.3.to_string(), t_variant_segment].join(""),
                 [previous_match.4.to_string(), q_variant_segment].join(""),
             )),
@@ -368,12 +368,12 @@ pub fn get_variants_from_aln_pair_map(
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, t_char, q_char, t);
             current_variant.push((t_char, q_char, t));
         }
-        'I' => {
+        'D' => {
             let q_char = query_str.as_bytes()[q_pos as usize] as char;
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, '-', q_char, t);
             current_variant.push(('-', q_char, t));
         }
-        'D' => {
+        'I' => {
             let t_char = target_str.as_bytes()[t_pos as usize] as char;
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, t_char, '-', t);
             current_variant.push((t_char, '-', t));
