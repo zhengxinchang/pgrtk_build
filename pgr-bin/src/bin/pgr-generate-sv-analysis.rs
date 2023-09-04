@@ -306,6 +306,72 @@ fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     wf_aln_diff
 }
 
+fn aln_segments(ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecord) -> Vec<Record> {
+    let target_name = &rec.target_name;
+    let query_name = &rec.query_name;
+    let target_seg_sequence = &rec.target_sequence[ts..te];
+    let query_seg_sequence = &rec.query_sequence[qs..qe];
+    let diff = get_aln_diff(target_seg_sequence, query_seg_sequence);
+
+    let ts = ts as u32 + rec.ts;
+    let te = te as u32 + rec.ts;
+
+    let (qs, qe) = if rec.orientation == 0 {
+        (qs as u32 + rec.qs, qe as u32 + rec.qs)
+    } else {
+        (rec.qe - qe as u32, rec.qe - qs as u32)
+    };
+    let mut aln_block_records = Vec::<Record>::new();
+    if let AlnDiff::Aligned(diff) = diff {
+        if diff.is_empty() {
+            aln_block_records.push(Record::Match((
+                target_name.clone(),
+                ts,
+                te,
+                query_name.clone(),
+                qs,
+                qe,
+                rec.orientation as u32,
+            )))
+        } else {
+            diff.into_iter().for_each(|(td, qd, vt, t_str, q_str)| {
+                aln_block_records.push(Record::Variant(
+                    (
+                        target_name.clone(),
+                        ts,
+                        te,
+                        query_name.clone(),
+                        qs,
+                        qe,
+                        rec.orientation as u32,
+                    ),
+                    td,
+                    qd,
+                    ts + td,
+                    vt,
+                    t_str,
+                    q_str,
+                ));
+            })
+        }
+    } else {
+        aln_block_records.push(Record::SvCnd((
+            (
+                target_name.clone(),
+                ts,
+                te,
+                query_name.clone(),
+                qs,
+                qe,
+                rec.orientation as u32,
+            ),
+            diff,
+            rec.ctg_orientation as u32,
+        )));
+    }
+    aln_block_records
+}
+
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
     let args = CmdOptions::parse();
@@ -466,7 +532,9 @@ fn main() -> Result<(), std::io::Error> {
         let query_bundles = sid_to_bundle_segs.get(&1).unwrap();
         let (_dist0, _diff_len0, _max_len0, aln_path) =
             align_bundles(query_bundles, target_bundles);
-        writeln!(outpu_alnmap_file,
+
+        writeln!(
+            outpu_alnmap_file,
             "## {:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             rec.aln_id,
             rec.svc_type,
@@ -479,13 +547,15 @@ fn main() -> Result<(), std::io::Error> {
             rec.orientation,
             rec.ctg_orientation,
             rec.aln_type
-        ).expect("can't write the alnmap output file");
-        let mut target_repeat_inverstion_count = FxHashMap::<u32, (u32, u32)>::default();
-        let mut query_repeat_inverstion_count = FxHashMap::<u32, (u32, u32)>::default();
+        )
+        .expect("can't write the alnmap output file");
+
+        let mut target_repeat_inversion_count = FxHashMap::<u32, (u32, u32)>::default();
+        let mut query_repeat_inversion_count = FxHashMap::<u32, (u32, u32)>::default();
         aln_path.iter().for_each(|elm| {
             let (qb_idx, tb_idx, _aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
             let t_seg = target_bundles[*tb_idx];
-            let e = target_repeat_inverstion_count
+            let e = target_repeat_inversion_count
                 .entry(t_seg.bundle_id)
                 .or_default();
             match t_seg.bundle_dir {
@@ -498,7 +568,7 @@ fn main() -> Result<(), std::io::Error> {
                 _ => (),
             }
             let q_seg = query_bundles[*qb_idx];
-            let e = query_repeat_inverstion_count
+            let e = query_repeat_inversion_count
                 .entry(q_seg.bundle_id)
                 .or_default();
             match q_seg.bundle_dir {
@@ -511,73 +581,6 @@ fn main() -> Result<(), std::io::Error> {
                 _ => (),
             }
         });
-
-        let aln_segments =
-            |ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecord| -> Vec<Record> {
-                let target_name = &rec.target_name;
-                let query_name = &rec.query_name;
-                let target_seg_sequence = &rec.target_sequence[ts..te];
-                let query_seg_sequence = &rec.query_sequence[qs..qe];
-                let diff = get_aln_diff(target_seg_sequence, query_seg_sequence);
-
-                let ts = ts as u32 + rec.ts;
-                let te = te as u32 + rec.ts;
-
-                let (qs, qe) = if rec.orientation == 0 {
-                    (qs as u32 + rec.qs, qe as u32 + rec.qs)
-                } else {
-                    (rec.qe - qe as u32, rec.qe - qs as u32)
-                };
-                let mut aln_block_records = Vec::<Record>::new();
-                if let AlnDiff::Aligned(diff) = diff {
-                    if diff.is_empty() {
-                        aln_block_records.push(Record::Match((
-                            target_name.clone(),
-                            ts,
-                            te,
-                            query_name.clone(),
-                            qs,
-                            qe,
-                            rec.orientation as u32,
-                        )))
-                    } else {
-                        diff.into_iter().for_each(|(td, qd, vt, t_str, q_str)| {
-                            aln_block_records.push(Record::Variant(
-                                (
-                                    target_name.clone(),
-                                    ts,
-                                    te,
-                                    query_name.clone(),
-                                    qs,
-                                    qe,
-                                    rec.orientation as u32,
-                                ),
-                                td,
-                                qd,
-                                ts + td,
-                                vt,
-                                t_str,
-                                q_str,
-                            ));
-                        })
-                    }
-                } else {
-                    aln_block_records.push(Record::SvCnd((
-                        (
-                            target_name.clone(),
-                            ts,
-                            te,
-                            query_name.clone(),
-                            qs,
-                            qe,
-                            rec.orientation as u32,
-                        ),
-                        diff,
-                        rec.ctg_orientation as u32,
-                    )));
-                }
-                aln_block_records
-            };
 
         let mut cur_target_seg_bgn = 0u32;
         let mut cur_query_seg_bgn = 0u32;
@@ -724,7 +727,8 @@ fn main() -> Result<(), std::io::Error> {
                 _ => None,
             };
             if let Some(rec_out) = rec_out {
-                writeln!(outpu_alnmap_file, "{}", rec_out).expect("can't write the alnmap output file");
+                writeln!(outpu_alnmap_file, "{}", rec_out)
+                    .expect("can't write the alnmap output file");
             }
         });
     });
