@@ -355,27 +355,39 @@ fn aln_segments(
                 query_bundle_path.to_string(),
             ))
         } else {
-            diff.into_iter().for_each(|(td, qd, vt, t_str, q_str)| {
-                aln_block_records.push(Record::Variant(
-                    (
-                        target_name.clone(),
-                        ts,
-                        te,
-                        query_name.clone(),
-                        qs,
-                        qe,
-                        rec.orientation as u32,
-                    ),
-                    td,
-                    qd,
-                    ts + td,
-                    vt,
-                    t_str,
-                    q_str,
-                    target_bundle_path.to_string(),
-                    query_bundle_path.to_string(),
-                ));
-            })
+            diff.into_iter()
+                .enumerate()
+                .for_each(|(ord, (td, qd, vt, t_str, q_str))| {
+                    let target_bundle_path = if ord == 0 {
+                        target_bundle_path.to_string()
+                    } else {
+                        "*".to_string()
+                    };
+                    let query_bundle_path = if ord == 0 {
+                        query_bundle_path.to_string()
+                    } else {
+                        "*".to_string()
+                    };
+                    aln_block_records.push(Record::Variant(
+                        (
+                            target_name.clone(),
+                            ts,
+                            te,
+                            query_name.clone(),
+                            qs,
+                            qe,
+                            rec.orientation as u32,
+                        ),
+                        td,
+                        qd,
+                        ts + td,
+                        vt,
+                        t_str,
+                        q_str,
+                        target_bundle_path,
+                        query_bundle_path,
+                    ));
+                });
         }
     } else {
         aln_block_records.push(Record::SvCnd((
@@ -608,8 +620,16 @@ fn main() -> Result<(), std::io::Error> {
                                 .map(|(id, dir, rep)| format!("{}:{}:{}", id, dir, rep))
                                 .collect::<Vec<_>>()
                                 .join("-");
-                            let target_path = if target_path.is_empty() { "*" } else { &target_path[..] }; 
-                            let query_path = if query_path.is_empty() { "*" } else { &query_path[..] }; 
+                            let target_path = if target_path.is_empty() {
+                                "*"
+                            } else {
+                                &target_path[..]
+                            };
+                            let query_path = if query_path.is_empty() {
+                                "*"
+                            } else {
+                                &query_path[..]
+                            };
 
                             if ts != te || qs != qe {
                                 // println!("target_segment: {} {} {}", ts, te, te - ts);
