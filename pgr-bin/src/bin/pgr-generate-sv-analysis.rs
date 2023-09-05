@@ -24,6 +24,9 @@ struct CmdOptions {
     /// the prefix of the output files
     #[clap(long, default_value = "Sample")]
     sample_name: String,
+    /// set the flag to generate long indel calls, but it might break some VCF file parsing
+    #[clap(long, default_value_t = false)]
+    large_indel_call: bool,
     /// number of threads used in parallel (more memory usage), default to "0" using all CPUs available or the number set by RAYON_NUM_THREADS
     #[clap(long, default_value_t = 0)]
     number_of_thread: usize,
@@ -418,6 +421,7 @@ fn aln_segments(
     rec: &CandidateRecord,
     target_bundle_path: &str,
     query_bundle_path: &str,
+    args: &CmdOptions, 
 ) -> Vec<Record> {
     let target_name = &rec.target_name;
     let query_name = &rec.query_name;
@@ -425,9 +429,12 @@ fn aln_segments(
     let query_seg_sequence = &rec.query_sequence[qs..qe];
 
     let diff =
-        if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() >= 128 {
-            get_block_aligner_diff(target_seg_sequence, query_seg_sequence)
-            //AlnDiff::FailLengthDiff
+        if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() >= 512 {
+            if args.large_indel_call {
+                get_block_aligner_diff(target_seg_sequence, query_seg_sequence)
+            } else {
+                AlnDiff::FailLengthDiff
+            }
         } else {
             get_aln_diff(target_seg_sequence, query_seg_sequence)
         };
@@ -762,6 +769,7 @@ fn main() -> Result<(), std::io::Error> {
                                     &rec,
                                     target_path,
                                     query_path,
+                                    &args
                                 ))
                             };
                         }
@@ -796,6 +804,7 @@ fn main() -> Result<(), std::io::Error> {
                         &rec,
                         &target_bundle_info[..],
                         &query_bundle_info[..],
+                        &args
                     ));
 
                     // println!("target_m_segment: {} {} {}", ts, te, te - ts);
@@ -831,7 +840,7 @@ fn main() -> Result<(), std::io::Error> {
         if ts != te && qs != qe {
             //println!("target_e_segment: {} {} {}", ts, te, te - ts);
             //println!("query_e_segment: {} {} {}", qs, qe, qe - qs);
-            aln_block_records.extend(aln_segments(ts, te, qs, qe, &rec, "*", "*"))
+            aln_block_records.extend(aln_segments(ts, te, qs, qe, &rec, "*", "*", &args))
         };
 
         // generate the alnmap records
