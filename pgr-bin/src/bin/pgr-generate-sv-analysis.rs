@@ -88,14 +88,23 @@ enum AlnDiff {
 }
 
 type ShimmerMatchBlock = (String, u32, u32, String, u32, u32, u32); //t_name, ts, ted, q_name, ts, te, orientation
-
 #[derive(Clone, Debug)]
 enum Record {
     _Bgn(ShimmerMatchBlock, u32, u32), // MatchBlock, q_len, ctg_aln_orientation
     _End(ShimmerMatchBlock, u32, u32), // MatchBlock, q_len, ctg_aln_orientation
-    Match(ShimmerMatchBlock),
-    SvCnd((ShimmerMatchBlock, AlnDiff, u32)), // MatchBlock, diff_type, ctg_aln_orientation
-    Variant(ShimmerMatchBlock, u32, u32, u32, char, String, String),
+    Match(ShimmerMatchBlock, String, String), // MatchBlock, target_bundle_path, query_bundle_path
+    SvCnd((ShimmerMatchBlock, AlnDiff, u32, String, String)), // MatchBlock, diff_type, ctg_aln_orientation, target_bundle_path, query_bundle_path
+    Variant(
+        ShimmerMatchBlock,
+        u32,
+        u32,
+        u32,
+        char,
+        String,
+        String,
+        String,
+        String,
+    ), // MatchBlock, Variant Info..., target_bundle_path, query_bundle_path
 }
 
 fn align_bundles(
@@ -306,7 +315,15 @@ fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     wf_aln_diff
 }
 
-fn aln_segments(ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecord) -> Vec<Record> {
+fn aln_segments(
+    ts: usize,
+    te: usize,
+    qs: usize,
+    qe: usize,
+    rec: &CandidateRecord,
+    target_bundle_path: &str,
+    query_bundle_path: &str,
+) -> Vec<Record> {
     let target_name = &rec.target_name;
     let query_name = &rec.query_name;
     let target_seg_sequence = &rec.target_sequence[ts..te];
@@ -324,15 +341,19 @@ fn aln_segments(ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecor
     let mut aln_block_records = Vec::<Record>::new();
     if let AlnDiff::Aligned(diff) = diff {
         if diff.is_empty() {
-            aln_block_records.push(Record::Match((
-                target_name.clone(),
-                ts,
-                te,
-                query_name.clone(),
-                qs,
-                qe,
-                rec.orientation as u32,
-            )))
+            aln_block_records.push(Record::Match(
+                (
+                    target_name.clone(),
+                    ts,
+                    te,
+                    query_name.clone(),
+                    qs,
+                    qe,
+                    rec.orientation as u32,
+                ),
+                target_bundle_path.to_string(),
+                query_bundle_path.to_string(),
+            ))
         } else {
             diff.into_iter().for_each(|(td, qd, vt, t_str, q_str)| {
                 aln_block_records.push(Record::Variant(
@@ -351,6 +372,8 @@ fn aln_segments(ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecor
                     vt,
                     t_str,
                     q_str,
+                    target_bundle_path.to_string(),
+                    query_bundle_path.to_string(),
                 ));
             })
         }
@@ -367,6 +390,8 @@ fn aln_segments(ts: usize, te: usize, qs: usize, qe: usize, rec: &CandidateRecor
             ),
             diff,
             rec.ctg_orientation as u32,
+            target_bundle_path.to_string(),
+            query_bundle_path.to_string(),
         )));
     }
     aln_block_records
@@ -550,91 +575,113 @@ fn main() -> Result<(), std::io::Error> {
         )
         .expect("can't write the alnmap output file");
 
-        let mut target_repeat_inversion_count = FxHashMap::<u32, (u32, u32)>::default();
-        let mut query_repeat_inversion_count = FxHashMap::<u32, (u32, u32)>::default();
-        aln_path.iter().for_each(|elm| {
-            let (qb_idx, tb_idx, _aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
-            let t_seg = target_bundles[*tb_idx];
-            let e = target_repeat_inversion_count
-                .entry(t_seg.bundle_id)
-                .or_default();
-            match t_seg.bundle_dir {
-                0 => {
-                    e.0 += 1;
-                }
-                1 => {
-                    e.1 += 1;
-                }
-                _ => (),
-            }
-            let q_seg = query_bundles[*qb_idx];
-            let e = query_repeat_inversion_count
-                .entry(q_seg.bundle_id)
-                .or_default();
-            match q_seg.bundle_dir {
-                0 => {
-                    e.0 += 1;
-                }
-                1 => {
-                    e.1 += 1;
-                }
-                _ => (),
-            }
-        });
-
         let mut cur_target_seg_bgn = 0u32;
         let mut cur_query_seg_bgn = 0u32;
         let mut aln_block_records = Vec::<Record>::new();
+        let mut pre_aln_type = None;
+        let mut pre_target_bundles = Vec::<(u32, u32, u8)>::new();
+        let mut pre_query_bundles = Vec::<(u32, u32, u8)>::new();
         aln_path.into_iter().for_each(|elm| {
             let (qb_idx, tb_idx, aln_type, _qb_bid, _tb_bid, _diff_delta, _max_diff) = elm;
             let t_seg = target_bundles[tb_idx];
             let q_seg = query_bundles[qb_idx];
 
-            let target_name = rec.target_name.clone();
-            let query_name = rec.query_name.clone();
+            // writeln!(outpu_alnmap_file, "{:?}", elm);
 
-            if aln_type == AlnType::Match {
-                // process any thing after the previous match block before the current match block
-                let ts = cur_target_seg_bgn as usize;
-                let te = (t_seg.bgn + shmmr_cfg.k) as usize;
-                let qs = cur_query_seg_bgn as usize;
-                let qe = (q_seg.bgn + shmmr_cfg.k) as usize;
-                if ts != te && qs != qe {
-                    // println!("target_segment: {} {} {}", ts, te, te - ts);
-                    // println!("query_segment: {} {} {}", qs, qe, qe - qs);
-                    aln_block_records.extend(aln_segments(ts, te, qs, qe, &rec))
-                };
+            match aln_type {
+                AlnType::Match => {
+                    match pre_aln_type {
+                        Some(AlnType::Match) => (), // if the previous is a match, there is no sequence between two match blocks
+                        _ => {
+                            // process any thing after the previous match block before the current match block
+                            let ts = cur_target_seg_bgn as usize;
+                            let te = (t_seg.bgn + shmmr_cfg.k) as usize;
+                            let qs = cur_query_seg_bgn as usize;
+                            let qe = (q_seg.bgn + shmmr_cfg.k) as usize;
+                            let target_path = pre_target_bundles
+                                .iter()
+                                .map(|(id, dir, rep)| format!("{}:{}:{}", id, dir, rep))
+                                .collect::<Vec<_>>()
+                                .join("-");
+                            let query_path = pre_query_bundles
+                                .iter()
+                                .map(|(id, dir, rep)| format!("{}:{}:{}", id, dir, rep))
+                                .collect::<Vec<_>>()
+                                .join("-");
+                            let target_path = if target_path.is_empty() { "*" } else { &target_path[..] }; 
+                            let query_path = if query_path.is_empty() { "*" } else { &query_path[..] }; 
 
-                // process the current match block
-                let ts = t_seg.bgn + rec.ts;
-                let te = t_seg.end + rec.ts;
+                            if ts != te || qs != qe {
+                                // println!("target_segment: {} {} {}", ts, te, te - ts);
+                                // println!("query_segment: {} {} {}", qs, qe, qe - qs);
+                                aln_block_records.extend(aln_segments(
+                                    ts,
+                                    te,
+                                    qs,
+                                    qe,
+                                    &rec,
+                                    target_path,
+                                    query_path,
+                                ))
+                            };
+                        }
+                    }
 
-                let qs = if rec.orientation == 0 {
-                    q_seg.bgn + rec.qs
-                } else {
-                    rec.qe - q_seg.end
-                };
-                let qe = if rec.orientation == 0 {
-                    q_seg.end + rec.qs
-                } else {
-                    rec.qe - q_seg.bgn
-                };
+                    pre_target_bundles.clear();
+                    pre_query_bundles.clear();
 
-                aln_block_records.push(Record::Match((
-                    target_name.clone(),
-                    ts,
-                    te,
-                    query_name.clone(),
-                    qs,
-                    qe,
-                    rec.orientation as u32,
-                )));
-                // println!("target_m_segment: {} {} {}", ts, te, te - ts);
-                // println!("query_m_segment: {} {} {}", qs, qe, qe - qs);
+                    // process the current match block
+                    let ts = t_seg.bgn as usize;
+                    let te = t_seg.end as usize;
+                    let qs = q_seg.bgn as usize;
+                    let qe = q_seg.end as usize;
+                    let target_bundle_info = format!(
+                        "{}:{}:{}",
+                        t_seg.bundle_id,
+                        t_seg.bundle_dir,
+                        if t_seg.is_repeat { 1 } else { 0 }
+                    );
+                    let query_bundle_info = format!(
+                        "{}:{}:{}",
+                        q_seg.bundle_id,
+                        q_seg.bundle_dir,
+                        if q_seg.is_repeat { 1 } else { 0 }
+                    );
 
-                cur_target_seg_bgn = t_seg.end;
-                cur_query_seg_bgn = q_seg.end;
+                    aln_block_records.extend(aln_segments(
+                        ts,
+                        te,
+                        qs,
+                        qe,
+                        &rec,
+                        &target_bundle_info[..],
+                        &query_bundle_info[..],
+                    ));
+
+                    // println!("target_m_segment: {} {} {}", ts, te, te - ts);
+                    // println!("query_m_segment: {} {} {}", qs, qe, qe - qs);
+
+                    cur_target_seg_bgn = t_seg.end - shmmr_cfg.k;
+                    cur_query_seg_bgn = q_seg.end - shmmr_cfg.k;
+                }
+                AlnType::Deletion => {
+                    pre_target_bundles.push((
+                        t_seg.bundle_id,
+                        t_seg.bundle_dir,
+                        if t_seg.is_repeat { 1 } else { 0 },
+                    ));
+                }
+                AlnType::Insertion => {
+                    pre_query_bundles.push((
+                        q_seg.bundle_id,
+                        q_seg.bundle_dir,
+                        if q_seg.is_repeat { 1 } else { 0 },
+                    ));
+                }
+                _ => (),
             };
+
+            pre_aln_type = Some(aln_type);
         });
         // the last segment
         let ts = cur_target_seg_bgn as usize;
@@ -644,13 +691,13 @@ fn main() -> Result<(), std::io::Error> {
         if ts != te && qs != qe {
             //println!("target_e_segment: {} {} {}", ts, te, te - ts);
             //println!("query_e_segment: {} {} {}", qs, qe, qe - qs);
-            aln_block_records.extend(aln_segments(ts, te, qs, qe, &rec))
+            aln_block_records.extend(aln_segments(ts, te, qs, qe, &rec, "*", "*"))
         };
 
         // generate the alnmap records
         aln_block_records.iter().for_each(|record| {
             let rec_out = match record.clone() {
-                Record::Match((tn, ts, te, qn, qs, qe, orientation)) => {
+                Record::Match((tn, ts, te, qn, qs, qe, orientation), target_path, query_path) => {
                     let match_type = if rec.svc_type.ends_with('D') {
                         "M_D"
                     } else if rec.svc_type.ends_with('O') {
@@ -660,11 +707,27 @@ fn main() -> Result<(), std::io::Error> {
                     };
 
                     Some(format!(
-                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        rec.aln_id, match_type, tn, ts, te, qn, qs, qe, orientation
+                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        rec.aln_id,
+                        match_type,
+                        tn,
+                        ts,
+                        te,
+                        qn,
+                        qs,
+                        qe,
+                        orientation,
+                        target_path,
+                        query_path
                     ))
                 }
-                Record::SvCnd(((tn, ts, te, qn, qs, qe, orientation), diff, ctg_orientation)) => {
+                Record::SvCnd((
+                    (tn, ts, te, qn, qs, qe, orientation),
+                    diff,
+                    ctg_orientation,
+                    target_path,
+                    query_path,
+                )) => {
                     let diff_type = match diff {
                         AlnDiff::FailAln => 'A',
                         AlnDiff::_FailEndMatch => 'E',
@@ -682,7 +745,7 @@ fn main() -> Result<(), std::io::Error> {
                     };
 
                     Some(format!(
-                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                         rec.aln_id,
                         svc_type,
                         tn,
@@ -693,10 +756,12 @@ fn main() -> Result<(), std::io::Error> {
                         qe,
                         orientation,
                         ctg_orientation,
-                        diff_type
+                        diff_type,
+                        target_path,
+                        query_path
                     ))
                 }
-                Record::Variant(match_block, td, qd, tc, vt, tvs, qvs) => {
+                Record::Variant(match_block, td, qd, tc, vt, tvs, qvs, target_path, query_path) => {
                     let (tn, ts, te, qn, qs, qe, orientation) = match_block;
                     let variant_type = if rec.svc_type.ends_with('D') {
                         "V_D"
@@ -706,7 +771,7 @@ fn main() -> Result<(), std::io::Error> {
                         "V"
                     };
                     Some(format!(
-                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                         rec.aln_id,
                         variant_type,
                         tn,
@@ -721,7 +786,9 @@ fn main() -> Result<(), std::io::Error> {
                         tc,
                         vt,
                         tvs,
-                        qvs
+                        qvs,
+                        target_path,
+                        query_path
                     ))
                 }
                 _ => None,
