@@ -317,7 +317,7 @@ fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
 }
 
 use block_aligner::{cigar::*, scan_block::*, scores::*};
-fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
+fn get_block_aligner_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
     let min_block_size = 32;
     let max_block_size = 256;
 
@@ -330,7 +330,7 @@ fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
     let mut a = Block::<true, false>::new(q.len(), r.len(), max_block_size);
     a.align(&q, &r, &NW1, gaps, min_block_size..=max_block_size, 0);
     let res = a.res();
-    println!("score: {}", res.score);
+    // println!("score: {}", res.score);
 
     let mut cigar = Cigar::new(res.query_idx, res.reference_idx);
     a.trace()
@@ -340,13 +340,14 @@ fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
     let mut p_q_match_end = 1_u32;
     let mut t_pos = 0_u32;
     let mut q_pos = 0_u32;
-    let diff = cigar
-        .to_vec()
+    let mut cigar_vec = cigar.to_vec();
+    cigar_vec.push( OpLen { op: Operation::Eq, len: 0 }); // Sentinel to trigger generating the last block 
+    let diff = cigar_vec 
         .into_iter()
         .flat_map(|oplen| match oplen.op {
             Operation::Eq => {
-                let out = if t_pos > p_t_match_end || q_pos > p_q_match_end {
-                    if t_pos - p_t_match_end == q_pos - p_q_match_end {
+                let out = if t_pos >= p_t_match_end || q_pos >= p_q_match_end {
+                    if t_pos - p_t_match_end == q_pos - p_q_match_end && q_pos - p_q_match_end > 0 {
                         let tvs =
                             String::from_utf8_lossy(&s0[p_t_match_end as usize..t_pos as usize])
                                 .deref()
@@ -355,7 +356,7 @@ fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
                             String::from_utf8_lossy(&s1[p_q_match_end as usize..q_pos as usize])
                                 .deref()
                                 .to_owned();
-                        Some((t_pos, q_pos, 'M', tvs.clone(), qvs.clone()))
+                        Some((p_t_match_end, p_q_match_end, 'M', tvs.clone(), qvs.clone()))
                     } else {
                         let tvs = String::from_utf8_lossy(
                             &s0[p_t_match_end as usize - 1..t_pos as usize],
@@ -368,9 +369,17 @@ fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
                         .deref()
                         .to_owned();
                         if tvs.len() > qvs.len() {
-                            Some((t_pos, q_pos, 'D', tvs, qvs))
+                            if !qvs.is_empty() {
+                                Some((p_t_match_end - 1, p_q_match_end - 1, 'D', tvs, qvs))
+                            } else {
+                                Some((p_t_match_end - 1, p_q_match_end - 1, 'E', tvs, qvs))
+                                // Error
+                            }
+                        } else if !tvs.is_empty() {
+                            Some((p_t_match_end - 1, p_q_match_end - 1, 'I', tvs, qvs))
                         } else {
-                            Some((t_pos, q_pos, 'I', tvs, qvs))
+                            Some((p_t_match_end - 1, p_q_match_end - 1, 'E', tvs, qvs))
+                            // Error
                         }
                     }
                 } else {
@@ -417,7 +426,7 @@ fn aln_segments(
 
     let diff =
         if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() >= 128 {
-            get_block_aln_diff(target_seg_sequence, query_seg_sequence)
+            get_block_aligner_diff(target_seg_sequence, query_seg_sequence)
             //AlnDiff::FailLengthDiff
         } else {
             get_aln_diff(target_seg_sequence, query_seg_sequence)
@@ -461,25 +470,43 @@ fn aln_segments(
                     } else {
                         "*".to_string()
                     };
-                    aln_block_records.push(Record::Variant(
-                        (
-                            target_name.clone(),
-                            ts,
-                            te,
-                            query_name.clone(),
-                            qs,
-                            qe,
-                            rec.orientation as u32,
-                        ),
-                        td,
-                        qd,
-                        ts + td,
-                        vt,
-                        t_str,
-                        q_str,
-                        target_bundle_path,
-                        query_bundle_path,
-                    ));
+                    if vt != 'E' {
+                        aln_block_records.push(Record::Variant(
+                            (
+                                target_name.clone(),
+                                ts,
+                                te,
+                                query_name.clone(),
+                                qs,
+                                qe,
+                                rec.orientation as u32,
+                            ),
+                            td,
+                            qd,
+                            ts + td,
+                            vt,
+                            t_str,
+                            q_str,
+                            target_bundle_path,
+                            query_bundle_path,
+                        ));
+                    } else {
+                        aln_block_records.push(Record::SvCnd((
+                            (
+                                target_name.clone(),
+                                ts,
+                                te,
+                                query_name.clone(),
+                                qs,
+                                qe,
+                                rec.orientation as u32,
+                            ),
+                            AlnDiff::FailAln,
+                            rec.ctg_orientation as u32,
+                            target_bundle_path.to_string(),
+                            query_bundle_path.to_string(),
+                        )));
+                    }
                 });
         }
     } else {
@@ -569,8 +596,8 @@ fn main() -> Result<(), std::io::Error> {
         ];
 
         let shmmr_cfg = ShimmerConfig {
-            w: 31,
-            k: 23,
+            w: 23,
+            k: 37,
             r: 1,
             min_span: 13,
             min_cov: 0,

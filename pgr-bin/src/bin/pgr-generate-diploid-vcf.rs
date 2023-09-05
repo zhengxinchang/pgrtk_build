@@ -72,11 +72,14 @@ fn main() -> Result<(), std::io::Error> {
 
         f.lines().for_each(|line| {
             if let Ok(line) = line {
+                if line.trim().starts_with('#') {
+                    return;
+                }; 
                 let fields = line.split('\t').collect::<Vec<&str>>();
                 assert!(fields.len() > 3);
                 let rec_type = fields[1];
                 if rec_type.starts_with('V') {
-                    assert!(fields.len() == 15);
+                    assert!(fields.len() == 15 || fields.len() == 17);
                     let err_msg = format!("fail to parse on {}", line);
                     let t_name = fields[2];
                     // let ts = fields[3].parse::<u32>().expect(&err_msg);
@@ -230,6 +233,7 @@ fn main() -> Result<(), std::io::Error> {
                 h1alleles.push((al_idx, rec.clone()));
             };
         });
+ 
         let mut ref_bases = ref_bases.into_iter().collect::<Vec<_>>();
         ref_bases.sort();
         let ref_str = String::from_iter(ref_bases.iter().map(|(_, c)| *c).collect::<Vec<_>>());
