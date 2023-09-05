@@ -21,6 +21,7 @@ bincode = { version = "2.0.0-rc.1", features = ["alloc"] }
 serde_json = "1.0.96"
 serde = "1.0.163"
 iset = "0.2.2"
+block-aligner = { version = "0.5", features = ["simd_avx2"] }
 
 [features]
 default = ["with_agc"]

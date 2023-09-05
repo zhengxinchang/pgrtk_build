@@ -8,6 +8,7 @@ use rustc_hash::FxHashMap;
 use serde::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::ops::Deref;
 use std::path::Path;
 
 /// perform structural variation principle bundle decomposition
@@ -305,14 +306,99 @@ fn group_smps_by_principle_bundle_id(
 fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     let wf_aln_diff: AlnDiff = if s0str.is_empty() || s1str.is_empty() {
         AlnDiff::FailShortSeq
-    } else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
-        AlnDiff::FailLengthDiff
+    //} else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
+    //    AlnDiff::FailLengthDiff
     } else if let Some(aln_res) = aln::get_variant_segments(s0str, s1str, 1, Some(384), 3, 3, 1) {
         AlnDiff::Aligned(aln_res)
     } else {
         AlnDiff::FailAln
     };
     wf_aln_diff
+}
+
+use block_aligner::{cigar::*, scan_block::*, scores::*};
+fn get_block_aln_diff(s0: &[u8], s1: &[u8]) -> AlnDiff {
+    let min_block_size = 32;
+    let max_block_size = 256;
+
+    let gaps = Gaps {
+        open: -3,
+        extend: -1,
+    };
+    let r = PaddedBytes::from_bytes::<NucMatrix>(s0, max_block_size);
+    let q = PaddedBytes::from_bytes::<NucMatrix>(s1, max_block_size);
+    let mut a = Block::<true, false>::new(q.len(), r.len(), max_block_size);
+    a.align(&q, &r, &NW1, gaps, min_block_size..=max_block_size, 0);
+    let res = a.res();
+    println!("score: {}", res.score);
+
+    let mut cigar = Cigar::new(res.query_idx, res.reference_idx);
+    a.trace()
+        .cigar_eq(&q, &r, res.query_idx, res.reference_idx, &mut cigar);
+    //println!("{}", cigar.to_string());
+    let mut p_t_match_end = 1_u32;
+    let mut p_q_match_end = 1_u32;
+    let mut t_pos = 0_u32;
+    let mut q_pos = 0_u32;
+    let diff = cigar
+        .to_vec()
+        .into_iter()
+        .flat_map(|oplen| match oplen.op {
+            Operation::Eq => {
+                let out = if t_pos > p_t_match_end || q_pos > p_q_match_end {
+                    if t_pos - p_t_match_end == q_pos - p_q_match_end {
+                        let tvs =
+                            String::from_utf8_lossy(&s0[p_t_match_end as usize..t_pos as usize])
+                                .deref()
+                                .to_owned();
+                        let qvs =
+                            String::from_utf8_lossy(&s1[p_q_match_end as usize..q_pos as usize])
+                                .deref()
+                                .to_owned();
+                        Some((t_pos, q_pos, 'M', tvs.clone(), qvs.clone()))
+                    } else {
+                        let tvs = String::from_utf8_lossy(
+                            &s0[p_t_match_end as usize - 1..t_pos as usize],
+                        )
+                        .deref()
+                        .to_owned();
+                        let qvs = String::from_utf8_lossy(
+                            &s1[p_q_match_end as usize - 1..q_pos as usize],
+                        )
+                        .deref()
+                        .to_owned();
+                        if tvs.len() > qvs.len() {
+                            Some((t_pos, q_pos, 'D', tvs, qvs))
+                        } else {
+                            Some((t_pos, q_pos, 'I', tvs, qvs))
+                        }
+                    }
+                } else {
+                    None
+                };
+                t_pos += oplen.len as u32;
+                q_pos += oplen.len as u32;
+                p_t_match_end = t_pos;
+                p_q_match_end = q_pos;
+                out
+            }
+            Operation::I => {
+                q_pos += oplen.len as u32;
+                None
+            }
+            Operation::D => {
+                t_pos += oplen.len as u32;
+                None
+            }
+            Operation::X => {
+                t_pos += oplen.len as u32;
+                q_pos += oplen.len as u32;
+                None
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    AlnDiff::Aligned(diff)
 }
 
 fn aln_segments(
@@ -328,7 +414,14 @@ fn aln_segments(
     let query_name = &rec.query_name;
     let target_seg_sequence = &rec.target_sequence[ts..te];
     let query_seg_sequence = &rec.query_sequence[qs..qe];
-    let diff = get_aln_diff(target_seg_sequence, query_seg_sequence);
+
+    let diff =
+        if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() >= 128 {
+            get_block_aln_diff(target_seg_sequence, query_seg_sequence)
+            //AlnDiff::FailLengthDiff
+        } else {
+            get_aln_diff(target_seg_sequence, query_seg_sequence)
+        };
 
     let ts = ts as u32 + rec.ts;
     let te = te as u32 + rec.ts;
