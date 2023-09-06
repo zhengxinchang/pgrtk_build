@@ -275,13 +275,13 @@ pub fn wfa_aln_pair_map(aln_target_str: &str, aln_query_str: &str) -> Vec<(u32, 
         .map(|(&tb, &qb)| {
             let mut t = '-';
             let new_t_pos = if tb == b'-' {
-                t = 'D';
+                t = 'I';
                 t_pos
             } else {
                 t_pos + 1
             };
             let new_q_pos = if qb == b'-' {
-                t = 'I';
+                t = 'D';
                 q_pos
             } else {
                 q_pos + 1
@@ -368,12 +368,12 @@ pub fn get_variants_from_aln_pair_map(
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, t_char, q_char, t);
             current_variant.push((t_char, q_char, t));
         }
-        'D' => {
+        'I' => {
             let q_char = query_str.as_bytes()[q_pos as usize] as char;
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, '-', q_char, t);
             current_variant.push(('-', q_char, t));
         }
-        'I' => {
+        'D' => {
             let t_char = target_str.as_bytes()[t_pos as usize] as char;
             debug!("{} {} {:1} {:1} {}", t_pos, q_pos, t_char, '-', t);
             current_variant.push((t_char, '-', t));
