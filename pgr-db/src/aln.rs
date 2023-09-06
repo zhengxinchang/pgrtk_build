@@ -423,6 +423,20 @@ pub fn get_variant_segments(
         open_penalty,
         extension_penalty,
     ) {
+
+        /*
+        // print out the alignment string for debugging
+
+        // let mut r_aln_target_str = aln_target_str.clone().as_bytes().to_owned();
+        // let mut r_aln_query_str = aln_query_str.clone().as_bytes().to_owned();
+        // r_aln_target_str.reverse();
+        // r_aln_query_str.reverse();
+        // let r_aln_target_str = String::from_utf8_lossy(&r_aln_target_str[..]);
+        // let r_aln_query_str = String::from_utf8_lossy(&r_aln_query_str[..]);
+        // println!("XX: {}", r_aln_target_str);
+        // println!("XX: {}", r_aln_query_str);
+        */ 
+
         let mut aln_pairs = wfa_aln_pair_map(&aln_target_str, &aln_query_str);
         // assume the base on the left are identical  ( # of base = left_padding)
         (0..left_padding).for_each(|delta| {
