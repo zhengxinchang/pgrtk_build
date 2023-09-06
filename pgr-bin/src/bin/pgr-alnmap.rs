@@ -13,7 +13,7 @@ use std::path::Path;
 
 /// Align long contigs and identify potential SV regions with respect to the reference fasta file
 #[derive(Parser, Debug)]
-#[clap(name = "pgr-get-sv-candidate-regions")]
+#[clap(name = "pgr-alnmap")]
 #[clap(author, version)]
 #[clap(about, long_about = None)]
 struct CmdOptions {
@@ -399,8 +399,8 @@ fn main() -> Result<(), std::io::Error> {
                                                 &s1str,
                                                 1,
                                                 Some(384),
-                                                3,
-                                                3,
+                                                4,
+                                                4,
                                                 1,
                                             ) {
                                                 AlnDiff::Aligned(aln_res)
