@@ -250,10 +250,28 @@ fn main() -> Result<(), std::io::Error> {
             })
             .collect::<Vec<_>>();
 
-        query_alleles.sort();
-        let query_alleles = query_alleles
-            .iter()
-            .map(|(_, qs)| qs.clone())
+        // deduplicate query_alleles
+        let mut al_idx_map = FxHashMap::<u32, u32>::default();
+        let mut unique_query_alleles = FxHashMap::<String, u32>::default();
+        al_idx_map.insert(0, 0);
+        unique_query_alleles.entry(ref_str.clone()).or_insert(0);
+        query_alleles.sort_by_key(|v| v.1.len());
+        let mut new_idx = 1u32;
+        query_alleles.iter().for_each(|(idx, allele)| {
+            
+            if !unique_query_alleles.contains_key(allele) {
+                unique_query_alleles.insert(allele.clone(), new_idx);
+                al_idx_map.insert(*idx, new_idx);
+                new_idx += 1;
+            } else {
+                al_idx_map.insert(*idx, *unique_query_alleles.get(allele).unwrap());
+            }
+        });
+
+        let query_alleles = unique_query_alleles
+            .into_iter()
+            .filter(|(_, v)| *v!=0)
+            .map(|(qs,_)| qs.clone())
             .collect::<Vec<_>>()
             .join(",");
 
@@ -262,7 +280,9 @@ fn main() -> Result<(), std::io::Error> {
                 if h0alleles.is_empty() {
                     "0".to_string()
                 } else {
-                    format!("{}", h0alleles.last().unwrap().0)
+                    let old_idx = h0alleles.last().unwrap().0;
+                    let new_idx = al_idx_map.get(&old_idx).unwrap();
+                    format!("{}", new_idx)
                 }
             } else {
                 ".".to_string()
@@ -275,7 +295,9 @@ fn main() -> Result<(), std::io::Error> {
                 if h1alleles.is_empty() {
                     "0".to_string()
                 } else {
-                    format!("{}", h1alleles.last().unwrap().0)
+                    let old_idx = h1alleles.last().unwrap().0;
+                    let new_idx = al_idx_map.get(&old_idx).unwrap();
+                    format!("{}", new_idx)
                 }
             } else {
                 ".".to_string()
@@ -295,14 +317,14 @@ fn main() -> Result<(), std::io::Error> {
     // variant_group: represent a group of overlapped variants, ref_id, ref_start, len, REF, ALT
     let mut variant_group = Vec::<VariantRecord>::new();
     // currrent_vg_end: represent the end coordinate of the current variant group
-    let mut currrent_vg_end = Option::<(String, u32)>::None;
+    let mut current_vg_end = Option::<(String, u32)>::None;
     variant_records.sort();
     variant_records
         .into_iter()
         .for_each(|(ref_name, ts, tl, ht, vts, vqs, rec_type)| {
-            if let Some(currrent_vg_end) = currrent_vg_end.clone() {
+            if let Some(current_vg_end) = current_vg_end.clone() {
                 //println!("{} {} {} {} {:?} {}", ref_name, ts, tl, ts + tl ,  currrent_vg_end, variant_group.len()  );
-                if ref_name == currrent_vg_end.0 && ts < currrent_vg_end.1 {
+                if ref_name == current_vg_end.0 && ts < current_vg_end.1 {
                     variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
                 } else if !variant_group.is_empty() {
                     // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
@@ -320,6 +342,9 @@ fn main() -> Result<(), std::io::Error> {
                         "PASS"
                     };
                     let qv: u32 = if rt != "PASS" { 30 } else { 40 };
+                    //writeln!(
+                    //    out_vcf, "{:?}", variant_group
+                    //);
                     writeln!(
                         out_vcf,
                         "{}\t{}\t.\t{}\t{}\t{}\t{}\t.\tGT\t{}",
@@ -337,10 +362,10 @@ fn main() -> Result<(), std::io::Error> {
                 }
             } else {
                 variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
-                currrent_vg_end = Some((ref_name, ts + tl));
+                current_vg_end = Some((ref_name, ts + tl));
                 return;
             }
-            currrent_vg_end = Some((ref_name.clone(), ts + tl));
+            current_vg_end = Some((ref_name.clone(), ts + tl));
         });
     if !variant_group.is_empty() {
         // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
@@ -371,6 +396,7 @@ fn main() -> Result<(), std::io::Error> {
         )
         .expect("fail to write the vcf file");
     };
+    variant_group.clear();
 
     let merge_intervals =
         |intervals: FxHashMap<String, IntervalSet<u32>>| -> FxHashMap<String, IntervalSet<u32>> {
