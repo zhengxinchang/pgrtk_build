@@ -109,15 +109,23 @@ fn main() {
             if itvl_group_bgn > itvl_group_end {
                 return;
             };
+
+            let mut label_count = FxHashMap::<String, u32>::default();
+
             let contained_intervals = intervals
                 .iter()
                 .map(|(interval, payload)| {
+                    let e = label_count.entry(payload.0.clone()).or_default();
+                    *e += 1;
                     format!(
-                        "{}\t{}\t{}\t{}",
-                        interval.0, interval.1, payload.0, payload.1
+                        "{}\t{}\t{}\t{}:{}",
+                        key, interval.0, interval.1, payload.0, payload.1
                     )
                 })
                 .collect::<Vec<_>>();
+            let label_count = label_count.into_iter().map(|(k,v)| {
+                format!("{}:{}", k, v)
+            }).collect::<Vec<String>>().join(",");
             let joined_contained_intervals = contained_intervals.join("\t");
             writeln!(
                 out_bed,
@@ -125,7 +133,7 @@ fn main() {
                 key,
                 itvl_group_bgn,
                 itvl_group_end,
-                contained_intervals.len(),
+                label_count,
                 0, // score in the bed file spec
                 joined_contained_intervals
             )
