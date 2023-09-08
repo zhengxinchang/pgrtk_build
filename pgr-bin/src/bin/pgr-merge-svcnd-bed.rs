@@ -6,9 +6,10 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
-/// Generate diploid VCF field from paired alnmap file from two haplotype assembly
+/// Merge svcnd from multiple *.svcnd.bed files into one and compute the merged regions
+/// It is useful to identify unique bed regions to one specific haplotype
 #[derive(Parser, Debug)]
-#[clap(name = "pgr-group-svcnd")]
+#[clap(name = "pgr-merge-svcnd-bed")]
 #[clap(author, version)]
 #[clap(about, long_about = None)]
 struct CmdOptions {
