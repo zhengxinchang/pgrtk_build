@@ -85,7 +85,9 @@ fn main() {
                 (current_bgn, current_end) = *interval;
             } else {
                 current_groups.push((*interval, payload.clone()));
-                current_end = interval.1;
+                if current_end < interval.1 {
+                    current_end = interval.1;
+                } 
             }
         });
         if !current_groups.is_empty() {
@@ -130,10 +132,11 @@ fn main() {
                 let e = label_count.entry(payload.0.clone()).or_default();
                 writeln!(
                     out_bed,
-                    "{}\t{}\t{}\t{}:{}-{}:{}",
+                    "{}\t{}\t{}\t{}:{}:{}-{}:{}",
                     key,
                     interval.0,
                     interval.1,
+                    payload.0,
                     payload.1,
                     itvl_group_bgn,
                     itvl_group_end,
