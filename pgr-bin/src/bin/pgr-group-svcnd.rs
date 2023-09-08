@@ -113,26 +113,30 @@ fn main() {
             };
 
             let mut label_count = FxHashMap::<String, u32>::default();
-            intervals.2.iter().for_each(|(interval, payload)| {
+            let mut total_interval_counts = 0u32;
+            intervals.2.iter().for_each(|(_interval, payload)| {
                 let e = label_count.entry(payload.0.clone()).or_default();
                 *e += 1;
+                total_interval_counts += 1;
             });
 
             writeln!(
                 out_bed,
-                "{}\t{}\t{}\tmerged:{}",
+                "{}\t{}\t{}\tmerged:{}:{}",
                 key,
                 itvl_group_bgn,
                 itvl_group_end,
-                label_count.len()
+                label_count.len(),
+                total_interval_counts
             )
             .expect("unable to write the output file");
 
             intervals.2.iter().for_each(|(interval, payload)| {
+                let number_haplotype = label_count.len();
                 let e = label_count.entry(payload.0.clone()).or_default();
                 writeln!(
                     out_bed,
-                    "{}\t{}\t{}\t{}:{}:{}-{}:{}",
+                    "{}\t{}\t{}\t{}:{}:{}-{}:{}:{}",
                     key,
                     interval.0,
                     interval.1,
@@ -140,6 +144,7 @@ fn main() {
                     payload.1,
                     itvl_group_bgn,
                     itvl_group_end,
+                    number_haplotype,
                     *e,
                 )
                 .expect("unable to write the output file");
