@@ -67,8 +67,8 @@ fn main() {
         });
     });
 
-    let group_intervals = |intervals: &mut Vec<Interval>| -> Vec<Vec<Interval>> {
-        let mut interval_groups = Vec::<Vec<Interval>>::new();
+    let group_intervals = |intervals: &mut Vec<Interval>| -> Vec<(u32, u32, Vec<Interval>)> {
+        let mut interval_groups = Vec::<(u32, u32, Vec<Interval>)>::new();
         if intervals.is_empty() {
             return interval_groups;
         }
@@ -79,7 +79,7 @@ fn main() {
         let mut current_groups = Vec::<Interval>::new();
         intervals.iter().for_each(|(interval, payload)| {
             if current_end < interval.0 {
-                interval_groups.push(current_groups.clone());
+                interval_groups.push((current_bgn, current_end, current_groups.clone()));
                 current_groups.clear();
                 current_groups.push((*interval, payload.clone()));
                 (current_bgn, current_end) = *interval;
@@ -89,7 +89,7 @@ fn main() {
             }
         });
         if !current_groups.is_empty() {
-            interval_groups.push(current_groups.clone());
+            interval_groups.push((current_bgn, current_end, current_groups.clone()));
         }
         interval_groups
     };
@@ -101,43 +101,46 @@ fn main() {
         let intervals = interval_collection.get_mut(&key).unwrap();
         let interval_groups = group_intervals(intervals);
         interval_groups.into_iter().for_each(|intervals| {
-            if intervals.is_empty() {
+            if intervals.2.is_empty() {
                 return;
             }
-            let itvl_group_bgn = intervals.first().unwrap().0 .0;
-            let itvl_group_end = intervals.iter().map(|itvl| {itvl.0.1}).max().unwrap_or(0);
+            let itvl_group_bgn = intervals.0;
+            let itvl_group_end = intervals.1;
             if itvl_group_bgn > itvl_group_end {
                 return;
             };
 
             let mut label_count = FxHashMap::<String, u32>::default();
+            intervals.2.iter().for_each(|(interval, payload)| {
+                let e = label_count.entry(payload.0.clone()).or_default();
+                *e += 1;
+            });
 
-            let contained_intervals = intervals
-                .iter()
-                .map(|(interval, payload)| {
-                    let e = label_count.entry(payload.0.clone()).or_default();
-                    *e += 1;
-                    format!(
-                        "{}\t{}\t{}\t{}:{}",
-                        key, interval.0, interval.1, payload.0, payload.1
-                    )
-                })
-                .collect::<Vec<_>>();
-            let label_count = label_count.into_iter().map(|(k,v)| {
-                format!("{}:{}", k, v)
-            }).collect::<Vec<String>>().join(",");
-            let joined_contained_intervals = contained_intervals.join("\t");
             writeln!(
                 out_bed,
-                "{}\t{}\t{}\t{}\t{}\n# {}",
+                "{}\t{}\t{}\tmerged:{}",
                 key,
                 itvl_group_bgn,
                 itvl_group_end,
-                label_count,
-                0, // score in the bed file spec
-                joined_contained_intervals
+                label_count.len()
             )
             .expect("unable to write the output file");
-        })
+
+            intervals.2.iter().for_each(|(interval, payload)| {
+                let e = label_count.entry(payload.0.clone()).or_default();
+                writeln!(
+                    out_bed,
+                    "{}\t{}\t{}\t{}:{}-{}:{}",
+                    key,
+                    interval.0,
+                    interval.1,
+                    payload.1,
+                    itvl_group_bgn,
+                    itvl_group_end,
+                    *e,
+                )
+                .expect("unable to write the output file");
+            });
+        });
     });
 }
