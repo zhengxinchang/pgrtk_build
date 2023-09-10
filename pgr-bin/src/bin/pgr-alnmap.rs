@@ -743,7 +743,6 @@ fn main() -> Result<(), std::io::Error> {
             );
             let t_name = target_name.get(t_idx).unwrap();
             in_aln_sv_and_bed_records.push((t_name.clone(), ts + 1, te + 1, bed_annotation));
-
         },
     );
 
@@ -1009,23 +1008,21 @@ fn main() -> Result<(), std::io::Error> {
                                 .get_sub_seq_by_id(t_idx, ts as usize, te as usize)
                                 .unwrap()[..];
                             let t_seq = String::from_utf8_lossy(t_seq_slice);
-                            let offset: usize = if orientation == 1 { 2 } else { 0 };
-                            let q_seq = String::from_utf8_lossy(
-                                &query_seqs[q_idx as usize].seq
-                                    [(qs as usize - offset)..(qe as usize - offset)],
-                            );
+                            let q_seq = if orientation == 0 {
+                                query_seqs[q_idx as usize].seq[(qs as usize)..(qe as usize)]
+                                    .to_vec()
+                            } else {
+                                reverse_complement(
+                                    &query_seqs[q_idx as usize].seq[(qs as usize)..(qe as usize)],
+                                )
+                            };
+                            let q_seq = String::from_utf8_lossy(&q_seq[..]);
 
-                            writeln!(
-                                out_sv_seq_file,
-                                "{}\t{}\t{}",
-                                out,
-                                t_seq,
-                                q_seq
-                            )
-                            .expect("writing fasta for SV candidate fail");
+                            writeln!(out_sv_seq_file, "{}\t{}\t{}", out, t_seq, q_seq)
+                                .expect("writing fasta for SV candidate fail");
                         };
 
-                        out 
+                        out
                     }
                     Record::Variant(match_block, td, qd, tc, vt, tvs, qvs) => {
                         let (t_idx, ts, te, q_idx, qs, qe, orientation) = match_block;

@@ -3,7 +3,6 @@ use clap::{self, CommandFactory, Parser};
 // use rayon::prelude::*;
 use pgr_db::aln;
 use pgr_db::ext::{get_principal_bundle_decomposition, SeqIndexDB};
-use pgr_db::fasta_io::reverse_complement;
 use rustc_hash::FxHashMap;
 use serde::*;
 use std::fs::File;
@@ -844,11 +843,7 @@ fn main() -> Result<(), std::io::Error> {
             let ctg_orientation = fields[9].parse::<u8>().expect(paser_err_msg);
             let aln_type = fields[10].to_string();
             let target_sequence = fields[11].into();
-            let query_sequence = if orientation == 0 {
-                fields[12].into()
-            } else {
-                reverse_complement(fields[12].as_bytes())
-            };
+            let query_sequence =  fields[12].into();
             let rec = CandidateRecord {
                 aln_id,
                 svc_type,
