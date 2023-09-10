@@ -145,6 +145,61 @@ fn main() -> Result<(), std::io::Error> {
         .map(|srec| (String::from_utf8_lossy(&srec.id[..]).to_string(), srec))
         .collect::<FxHashMap<String, SeqRec>>();
 
+    // TODO: this is not an ideal cache mechanism, but it is easy to implement.
+    // Find a better way in the future
+    let mut cached_map = FxHashMap::<
+        (String, u32, u32, String, u32, u32, u32),
+        Option<FxHashMap<u32, u32>>,
+    >::default();
+
+    let mut get_target_position_map = |t_name: &String,
+                                       ts: &u32,
+                                       te: &u32,
+                                       q_name: &String,
+                                       qs: &u32,
+                                       qe: &u32,
+                                       orientation: &u32|
+     -> Option<FxHashMap<u32, u32>> {
+        let e = cached_map
+            .entry((
+                t_name.clone(),
+                *ts,
+                *ts,
+                q_name.clone(),
+                *qs,
+                *qs,
+                *orientation,
+            ))
+            .or_insert_with(|| {
+                let t_seq = &target_seqs.get(t_name).unwrap().seq;
+                let t_sub_seq = t_seq[(*ts as usize)..(*te as usize)].to_vec();
+
+                let q_seq = &query_seqs.get(q_name).unwrap().seq;
+
+                let q_sub_seq = if *orientation == 0 {
+                    q_seq[(*qs as usize)..(*qe as usize)].to_vec()
+                } else {
+                    reverse_complement(&q_seq[(*qs as usize)..(*qe as usize)])
+                };
+                let t_str = String::from_utf8_lossy(&t_sub_seq[..]);
+                let q_str = String::from_utf8_lossy(&q_sub_seq[..]);
+                if let Some((aln_target_str, aln_query_str)) =
+                    wfa_align_bases(&t_str, &q_str, 384, 4, 4, 1)
+                {
+                    let mut q_pos_to_t_pos_map = FxHashMap::<u32, u32>::default();
+                    wfa_aln_pair_map(&aln_target_str, &aln_query_str)
+                        .into_iter()
+                        .for_each(|(tp, qp, _)| {
+                            q_pos_to_t_pos_map.entry(qp).or_insert(tp);
+                        });
+                    Some(q_pos_to_t_pos_map)
+                } else {
+                    None
+                }
+            });
+        e.clone()
+    };
+
     let mut position_of_interests = FxHashMap::<String, Vec<u32>>::default();
 
     let coorindate_file =
@@ -170,7 +225,6 @@ fn main() -> Result<(), std::io::Error> {
         .iter_mut()
         .for_each(|(q_name, q_coordiates)| {
             if let Some(interval_map) = aln_intervals.get(q_name) {
-                let q_seq = &query_seqs.get(q_name).unwrap().seq;
                 q_coordiates.sort();
                 q_coordiates.iter().for_each(|coordinate| {
                     let mut overlap_records = Vec::<(&String, &u32, &ShimmerMatchBlock)>::new();
@@ -218,32 +272,15 @@ fn main() -> Result<(), std::io::Error> {
                                         ));
                                     }
                                 } else if btype.starts_with('V') {
-                                    // TODO: we should do alignment just once for each block
-                                    let t_seq = &target_seqs.get(t_name).unwrap().seq;
-                                    let t_sub_seq = t_seq[(*ts as usize)..(*te as usize)].to_vec();
-
-                                    let q_sub_seq = if *orientation == 0 {
-                                        q_seq[(*qs as usize)..(*qe as usize)].to_vec()
-                                    } else {
-                                        reverse_complement(&q_seq[(*qs as usize)..(*qe as usize)])
-                                    };
-                                    let t_str = String::from_utf8_lossy(&t_sub_seq[..]);
-                                    let q_str = String::from_utf8_lossy(&q_sub_seq[..]);
-                                    let q_pos_to_t_pos_map =
-                                        if let Some((aln_target_str, aln_query_str)) =
-                                            wfa_align_bases(&t_str, &q_str, 384, 4, 4, 1)
-                                        {
-                                            let mut q_pos_to_t_pos_map =
-                                                FxHashMap::<u32, u32>::default();
-                                            wfa_aln_pair_map(&aln_target_str, &aln_query_str)
-                                                .into_iter()
-                                                .for_each(|(tp, qp, _)| {
-                                                    q_pos_to_t_pos_map.entry(qp).or_insert(tp);
-                                                });
-                                            Some(q_pos_to_t_pos_map)
-                                        } else {
-                                            None
-                                        };
+                                    let q_pos_to_t_pos_map = get_target_position_map(
+                                        t_name,
+                                        ts,
+                                        te,
+                                        q_name,
+                                        qs,
+                                        qe,
+                                        orientation,
+                                    );
 
                                     if let Some(q_pos_to_t_pos_map) = q_pos_to_t_pos_map {
                                         let q_pos = if *orientation == 0 {
