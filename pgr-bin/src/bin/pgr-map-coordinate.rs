@@ -1,10 +1,11 @@
 const VERSION_STRING: &str = env!("VERSION_STRING");
 use clap::{self, CommandFactory, Parser};
 use iset::IntervalMap;
+use pgr_db::aln::{wfa_align_bases, wfa_aln_pair_map};
 // use rayon::prelude::*;
 use pgr_db::ext::{get_fastx_reader, GZFastaReader};
 use pgr_db::fasta_io::{reverse_complement, SeqRec};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
@@ -117,6 +118,11 @@ fn main() -> Result<(), std::io::Error> {
         GZFastaReader::RegularFile(reader) => add_target_seqs(&mut reader.into_iter()),
     };
 
+    let target_seqs = target_seqs
+        .into_iter()
+        .map(|srec| (String::from_utf8_lossy(&srec.id[..]).to_string(), srec))
+        .collect::<FxHashMap<String, SeqRec>>();
+
     let mut query_seqs: Vec<SeqRec> = vec![];
     let mut add_query_seqs = |seq_iter: &mut dyn Iterator<Item = io::Result<SeqRec>>| {
         seq_iter.into_iter().for_each(|r| {
@@ -133,6 +139,11 @@ fn main() -> Result<(), std::io::Error> {
         #[allow(clippy::useless_conversion)] // the into_iter() is necessary for dyn patching
         GZFastaReader::RegularFile(reader) => add_query_seqs(&mut reader.into_iter()),
     };
+
+    let query_seqs = query_seqs
+        .into_iter()
+        .map(|srec| (String::from_utf8_lossy(&srec.id[..]).to_string(), srec))
+        .collect::<FxHashMap<String, SeqRec>>();
 
     let mut position_of_interests = FxHashMap::<String, Vec<u32>>::default();
 
@@ -154,38 +165,155 @@ fn main() -> Result<(), std::io::Error> {
     });
 
     let mut out_file = BufWriter::new(File::create(Path::new(&args.output_path)).unwrap());
-  
 
     position_of_interests
         .iter_mut()
         .for_each(|(q_name, q_coordiates)| {
             if let Some(interval_map) = aln_intervals.get(q_name) {
+                let q_seq = &query_seqs.get(q_name).unwrap().seq;
                 q_coordiates.sort();
                 q_coordiates.iter().for_each(|coordinate| {
                     let mut overlap_records = Vec::<(&String, &u32, &ShimmerMatchBlock)>::new();
-                    interval_map
-                        .values_overlap(*coordinate)
-                        .for_each(|block| {
-                            overlap_records.push((q_name, coordinate, block)); 
-                        });
+                    interval_map.values_overlap(*coordinate).for_each(|block| {
+                        overlap_records.push((q_name, coordinate, block));
+                    });
                     if overlap_records.is_empty() {
-                        writeln!(out_file, "{}\t{}\t*\t*\t*\t*", q_name, coordinate).expect("can't write the output file");
+                        writeln!(out_file, "{}\t{}\t*\t*\t*\t*\t0", q_name, coordinate)
+                            .expect("can't write the output file");
                     } else {
-                        overlap_records.into_iter().for_each(|(q_name, coordinate, block)| {
-                            let (t_name, t_s, _, _, q_s, _, orientation, btype) = block;
-                            if btype.starts_with('M') && *orientation == 0 {
-                                    let t_name = t_name.clone();
-                                    let t_coordinate = coordinate - q_s + t_s;
-                                    writeln!(out_file, "{}\t{}\t{}\t{}\t{}\t{}", q_name, coordinate, t_name, t_coordinate, block.6, block.7).expect("can't write the output file");
+                        let mut target_collection = FxHashSet::<(
+                            String,
+                            u32,
+                            Option<String>,
+                            Option<u32>,
+                            u32,
+                            String,
+                        )>::default();
+                        overlap_records
+                            .into_iter()
+                            .for_each(|(q_name, coordinate, block)| {
+                                let (t_name, ts, te, _, qs, qe, orientation, btype) = block;
+                                if btype.starts_with('M') {
+                                    if *orientation == 0 {
+                                        let t_name = t_name.clone();
+                                        let t_coordinate = coordinate - qs + ts;
+                                        target_collection.insert((
+                                            q_name.clone(),
+                                            *coordinate,
+                                            Some(t_name),
+                                            Some(t_coordinate),
+                                            *orientation,
+                                            btype.clone(),
+                                        ));
+                                    } else {
+                                        let t_name = t_name.clone();
+                                        let t_coordinate = (qe - coordinate) + ts; //TODO: check
+                                        target_collection.insert((
+                                            q_name.clone(),
+                                            *coordinate,
+                                            Some(t_name),
+                                            Some(t_coordinate),
+                                            *orientation,
+                                            btype.clone(),
+                                        ));
+                                    }
+                                } else if btype.starts_with('V') {
+                                    // TODO: we should do alignment just once for each block
+                                    let t_seq = &target_seqs.get(t_name).unwrap().seq;
+                                    let t_sub_seq = t_seq[(*ts as usize)..(*te as usize)].to_vec();
+
+                                    let q_sub_seq = if *orientation == 0 {
+                                        q_seq[(*qs as usize)..(*qe as usize)].to_vec()
+                                    } else {
+                                        reverse_complement(&q_seq[(*qs as usize)..(*qe as usize)])
+                                    };
+                                    let t_str = String::from_utf8_lossy(&t_sub_seq[..]);
+                                    let q_str = String::from_utf8_lossy(&q_sub_seq[..]);
+                                    let q_pos_to_t_pos_map =
+                                        if let Some((aln_target_str, aln_query_str)) =
+                                            wfa_align_bases(&t_str, &q_str, 384, 4, 4, 1)
+                                        {
+                                            let mut q_pos_to_t_pos_map =
+                                                FxHashMap::<u32, u32>::default();
+                                            wfa_aln_pair_map(&aln_target_str, &aln_query_str)
+                                                .into_iter()
+                                                .for_each(|(tp, qp, _)| {
+                                                    q_pos_to_t_pos_map.entry(qp).or_insert(tp);
+                                                });
+                                            Some(q_pos_to_t_pos_map)
+                                        } else {
+                                            None
+                                        };
+
+                                    if let Some(q_pos_to_t_pos_map) = q_pos_to_t_pos_map {
+                                        let q_pos = if *orientation == 0 {
+                                            coordinate - qs
+                                        } else {
+                                            qe - coordinate
+                                        };
+                                        if let Some(t_pos) = q_pos_to_t_pos_map.get(&q_pos) {
+                                            target_collection.insert((
+                                                q_name.clone(),
+                                                *coordinate,
+                                                Some(t_name.clone()),
+                                                Some(t_pos + ts),
+                                                *orientation,
+                                                btype.clone(),
+                                            ));
+                                        } else {
+                                            target_collection.insert((
+                                                q_name.clone(),
+                                                *coordinate,
+                                                Some(t_name.clone()),
+                                                None,
+                                                *orientation,
+                                                btype.clone(),
+                                            ));
+                                        }
+                                    } else {
+                                        target_collection.insert((
+                                            q_name.clone(),
+                                            *coordinate,
+                                            Some(t_name.clone()),
+                                            None,
+                                            *orientation,
+                                            btype.clone(),
+                                        ));
+                                    }
                                 } else {
-                                    writeln!(out_file, "{}\t{}\t*\t*\t{}\t{}", q_name, coordinate, orientation, btype).expect("can't write the output file");
+                                    target_collection.insert((
+                                        q_name.clone(),
+                                        *coordinate,
+                                        Some(t_name.clone()),
+                                        None,
+                                        *orientation,
+                                        btype.clone(),
+                                    ));
                                 };
-                        } ); 
+                            });
+                        let hit_count = target_collection.len();
+                        target_collection.into_iter().for_each(
+                            |(q_name, q_pos, t_name, t_pos, orientation, btype)| {
+                                let t_name = if let Some(t_name) = t_name {
+                                    t_name
+                                } else {
+                                    "*".to_string()
+                                };
+                                let t_pos = if let Some(t_pos) = t_pos {
+                                    format!("{}", t_pos)
+                                } else {
+                                    "*".to_string()
+                                };
+                                writeln!(
+                                    out_file,
+                                    "{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                    q_name, q_pos, t_name, t_pos, orientation, btype, hit_count
+                                )
+                                .expect("can't write the output file")
+                            },
+                        );
                     }
                 });
-
-
-                
             }
         });
 
