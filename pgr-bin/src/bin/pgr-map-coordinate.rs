@@ -164,20 +164,21 @@ fn main() -> Result<(), std::io::Error> {
                 q_coordiates.iter().for_each(|coordinate| {
                     let mut overlap_records = Vec::<(&String, &u32, &ShimmerMatchBlock)>::new();
                     interval_map
-                        .overlap(*coordinate)
-                        .for_each(|(_range, block)| {
+                        .values_overlap(*coordinate)
+                        .for_each(|block| {
                             overlap_records.push((q_name, coordinate, block)); 
                         });
                     if overlap_records.is_empty() {
                         writeln!(out_file, "{}\t{}\t*\t*\t*\t*", q_name, coordinate).expect("can't write the output file");
                     } else {
                         overlap_records.into_iter().for_each(|(q_name, coordinate, block)| {
-                            if block.7.starts_with('M') && block.6 == 0 {
-                                    let t_name = block.0.clone();
-                                    let t_coordinate = coordinate - block.4 + block.1;
+                            let (t_name, t_s, _, _, q_s, _, orientation, btype) = block;
+                            if btype.starts_with('M') && *orientation == 0 {
+                                    let t_name = t_name.clone();
+                                    let t_coordinate = coordinate - q_s + t_s;
                                     writeln!(out_file, "{}\t{}\t{}\t{}\t{}\t{}", q_name, coordinate, t_name, t_coordinate, block.6, block.7).expect("can't write the output file");
                                 } else {
-                                    writeln!(out_file, "{}\t{}\t*\t*\t{}\t{}", q_name, coordinate, block.6, block.7).expect("can't write the output file");
+                                    writeln!(out_file, "{}\t{}\t*\t*\t{}\t{}", q_name, coordinate, orientation, btype).expect("can't write the output file");
                                 };
                         } ); 
                     }
