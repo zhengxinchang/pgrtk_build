@@ -149,7 +149,7 @@ fn main() -> Result<(), std::io::Error> {
     // Find a better way in the future
     let mut cached_map = FxHashMap::<
         (String, u32, u32, String, u32, u32, u32),
-        Option<FxHashMap<u32, u32>>,
+        Option<Box<FxHashMap<u32, u32>>>,
     >::default();
 
     let mut get_target_position_map = |t_name: &String,
@@ -159,7 +159,7 @@ fn main() -> Result<(), std::io::Error> {
                                        qs: &u32,
                                        qe: &u32,
                                        orientation: &u32|
-     -> Option<FxHashMap<u32, u32>> {
+     -> Option<Box<FxHashMap<u32, u32>>> {
         let e = cached_map
             .entry((
                 t_name.clone(),
@@ -192,7 +192,7 @@ fn main() -> Result<(), std::io::Error> {
                         .for_each(|(tp, qp, _)| {
                             q_pos_to_t_pos_map.entry(qp).or_insert(tp);
                         });
-                    Some(q_pos_to_t_pos_map)
+                    Some(Box::new(q_pos_to_t_pos_map))
                 } else {
                     None
                 }
