@@ -243,6 +243,7 @@ fn main() -> Result<(), std::io::Error> {
                             u32,
                             String,
                         )>::default();
+                        let mut unique_targets = FxHashSet::<(String, u32)>::default();
                         overlap_records
                             .into_iter()
                             .for_each(|(q_name, coordinate, block)| {
@@ -254,22 +255,24 @@ fn main() -> Result<(), std::io::Error> {
                                         target_collection.insert((
                                             q_name.clone(),
                                             *coordinate,
-                                            Some(t_name),
+                                            Some(t_name.clone()),
                                             Some(t_coordinate),
                                             *orientation,
                                             btype.clone(),
                                         ));
+                                        unique_targets.insert((t_name, t_coordinate));
                                     } else {
                                         let t_name = t_name.clone();
                                         let t_coordinate = (qe - coordinate) + ts; //TODO: check
                                         target_collection.insert((
                                             q_name.clone(),
                                             *coordinate,
-                                            Some(t_name),
+                                            Some(t_name.clone()),
                                             Some(t_coordinate),
                                             *orientation,
                                             btype.clone(),
                                         ));
+                                        unique_targets.insert((t_name, t_coordinate));
                                     }
                                 } else if btype.starts_with('V') {
                                     let q_pos_to_t_pos_map = get_target_position_map(
@@ -297,6 +300,7 @@ fn main() -> Result<(), std::io::Error> {
                                                 *orientation,
                                                 btype.clone(),
                                             ));
+                                            unique_targets.insert((t_name.clone(), *coordinate));
                                         } else {
                                             target_collection.insert((
                                                 q_name.clone(),
@@ -328,7 +332,7 @@ fn main() -> Result<(), std::io::Error> {
                                     ));
                                 };
                             });
-                        let hit_count = target_collection.len();
+                        let hit_count = unique_targets.len();
                         target_collection.into_iter().for_each(
                             |(q_name, q_pos, t_name, t_pos, orientation, btype)| {
                                 let t_name = if let Some(t_name) = t_name {
