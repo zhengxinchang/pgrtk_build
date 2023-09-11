@@ -300,7 +300,7 @@ fn main() -> Result<(), std::io::Error> {
                                                 *orientation,
                                                 btype.clone(),
                                             ));
-                                            unique_targets.insert((t_name.clone(), *coordinate));
+                                            unique_targets.insert((t_name.clone(), t_pos + ts));
                                         } else {
                                             target_collection.insert((
                                                 q_name.clone(),
