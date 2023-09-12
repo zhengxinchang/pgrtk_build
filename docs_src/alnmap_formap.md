@@ -17,16 +17,17 @@ record.) The second field is the record types:
 - "E": the record represents the end of the chain of the align blocks.
 - "M": the record represents a full alignment (no variant) block.
 - "M_D": the record represents a full alignment (no variant) block, however, two or more query are mapped to the same target block
+- "M_O": the record represents a full alignment (no variant) block, however, two or more query are mapped to the same target block from overlapped alignment chains
 - "V": the record represetns there are variants between the query and the target, the variant information are appended.
 - "V_D": the record represents there are variants between the query and the target, the variant information are appended. There are other query  blocks mapping to the same target block.
+- "V_O": the record represents there are variants between the query and the target, the variant information are appended. There are other query  blocks mapping to the same target block from overlapped alignment chains.
 - "S": the record represents potential structral variants between the query and the target block.
 - "S_D": the record represents potential structral variants between the query and the target block. There are other query  blocks mapping to the same target block.
+- "S_O": the record represents potential structral variants between the query and the target block. There are other query  blocks mapping to the same target blocke
 
 All records share the following common 9 fields seperated by `tab`:
 
 `aligned_chain_id, block_type, target_name, target_start, target_end, query_name, query_start, query_end, query_strand`
-
-The "B" and "V/V_D" blocks contains additional fields.
 
 
 The follow command generate the unqiuely mapped blocks:
@@ -42,12 +43,12 @@ and the duplicate mapped blocks:
 cat grch38_to_chm13.alnmap | awk '$2 == "V_D" || $2 =="M_D" || $2 == "S_D" ' | cut  -f1-9 | sort  -k3,3 -k4,4n -u >  grch38_to_chm13_dup_blocks.alnmap
 ```
 
-For the "V" and "V_D", six addition fields are appended:
+For the "V", "V_D" and "V_O" records, six addition fields are appended:
 (`variant_position_in_the_target_block`, `variant_position_in_the_query_block`, `variant_position_in_the_target_sequence`, `variant_type`, `ref_seq`, `variant_seq`)
 
 For the "B" and "E" blocks, two additional fields are appended: `query_sequence_length`, `the_alingment_orientation_of_the_contig`.
 
-For the "S" and "S_D" blocks, two addional fileds are appended: `the_alingment_orientation_of_the_contig`, `sv_candidate_ type`.
+For the "S", "S_D" and "S_O" blocks, two addional fileds are appended: `the_alingment_orientation_of_the_contig`, `sv_candidate_ type`.
 
 
 
