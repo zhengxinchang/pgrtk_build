@@ -32,14 +32,14 @@ The "B" and "V/V_D" blocks contains additional fields.
 The follow command generate the unqiuely mapped blocks:
 
 ```
-cat hg19_to_grch38.alnmap | awk '$2 == "V" || $2 =="M" || $2 == "S" ' | cut  -f1-9 | sort  -k3,3 -k4,4n -u >  hg19_to_grch38_uniq_blocks.alnmap
+cat grch38_to_chm13.alnmap | awk '$2 == "V" || $2 =="M" || $2 == "S" ' | cut  -f1-9 | sort  -k3,3 -k4,4n -u >  grch38_to_chm13_unique_blocks.alnmap
 
 ```
 
 and the duplicate mapped blocks:
 
 ```
-cat hg19_to_grch38.alnmap | awk '$2 == "V_D" || $2 =="M_D" || $2 == "S_D" ' | cut  -f1-9 | sort  -k3,3 -k4,4n -u >  hg19_to_grch38_dup_blocks.alnmap
+cat grch38_to_chm13.alnmap | awk '$2 == "V_D" || $2 =="M_D" || $2 == "S_D" ' | cut  -f1-9 | sort  -k3,3 -k4,4n -u >  grch38_to_chm13_dup_blocks.alnmap
 ```
 
 For the "V" and "V_D", six addition fields are appended:
