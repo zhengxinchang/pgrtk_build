@@ -254,7 +254,8 @@ fn main() -> Result<(), std::io::Error> {
         .set("width", args.panel_width)
         .set("height", svg_box_height)
         .set("preserveAspectRatio", "none")
-        .set("id", "WholeGenomeViwer");
+        .set("id", "WholeGenomeViwer")        
+        .set("overflow", "visible");
 
     let scaling_factor = if let Some(total_target_bases) = args.total_target_bases {
         args.panel_width * 0.8 / total_target_bases
@@ -440,14 +441,16 @@ fn main() -> Result<(), std::io::Error> {
                     0,
                     -25,
                     args.panel_width,
-                    125,
+                    130,
                 ),
             )
             .set("width", args.panel_width)
             .set("height", 130)
             .set("preserveAspectRatio", "none")
             .set("y", y_offset)
-            .set("id", t_name.clone());
+            .set("id", t_name.clone())
+            .set("class", "chr_view")
+            .set("overflow", "visible");
     
             sub_svg.append(group);
             document.append(sub_svg);
@@ -468,7 +471,54 @@ fn main() -> Result<(), std::io::Error> {
     let mut svg_elment = BufWriter::new(Vec::new());
     svg::write(&mut svg_elment, &document).unwrap();
     if !args.svg {
-        writeln!(out_file, "<html><body>").expect("can't write the output html file");
+        let jscript = r#"
+        <script>
+        document.addEventListener('readystatechange', event => {
+            if (event.target.readyState === "complete") {
+                var views = document.getElementsByClassName("chr_view");
+                for (let i = 0; i < views.length; i++) {
+                    views[i].addEventListener('wheel', function(event) {
+                        event.preventDefault();
+                        const viewBoxValues = views[i].getAttribute('viewBox').split(' ').map(val => parseFloat(val));
+                        let viewBox = { x: viewBoxValues[0], y: viewBoxValues[1], width: viewBoxValues[2], height: viewBoxValues[3] };
+                
+                        // Scaling factor determines the zoom speed
+                        const scalingFactor = 0.05;
+                        
+                        // Cross-browser wheel delta
+                        const delta = -1 * event.wheelDelta || event.deltaY || event.detail;
+                
+                        // Calculate the zoom factor.
+                        const zoomFactor = delta > 0 ? (1 + scalingFactor) : (1 - scalingFactor);
+
+                        // Get mouse position (relative to the SVG element).
+                        const rect = views[i].getBoundingClientRect();
+                        const mouseX = event.clientX - rect.left;
+                        console.log([rect, mouseX]);
+                        
+                
+                        // Convert mouse position to SVG coordinates.
+                        const svgMouseX = viewBox.x + (mouseX / rect.width) * viewBox.width;
+
+                        viewBox.width *= zoomFactor;
+                        viewBox.height = 130;
+                        
+                        // Adjust the viewBox values to keep the zoom centered
+                        //viewBox.x = svgMouseX  - mouseX * (viewBox.width / rect.width);
+                        viewBox.x = 0;
+                        viewBox.y = -20;
+                        
+                        // Update the SVG's viewBox attribute
+                        views[i].setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
+                    });
+            
+                };
+            }
+        });
+        </script>
+        "#;
+        writeln!(out_file, r#"<html><body><div style="overflow:scroll;">"#).expect("can't write the output html file");
+        writeln!(out_file, "{}", jscript).expect("can't write the output html file");
     };
 
     writeln!(
@@ -479,7 +529,7 @@ fn main() -> Result<(), std::io::Error> {
     .expect("can't write the output HTML or SVG file");
 
     if !args.svg {
-        writeln!(out_file, "</body></html>").expect("can't write the output html file");
+        writeln!(out_file, "</div></body></html>").expect("can't write the output html file");
     };
 
     Ok(())
