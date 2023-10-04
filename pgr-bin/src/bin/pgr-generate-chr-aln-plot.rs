@@ -247,11 +247,11 @@ fn main() -> Result<(), std::io::Error> {
             (
                 -args.panel_width * 0.05,
                 -50,
-                args.panel_width * 0.95,
+                args.panel_width * 0.95 * 2.0,
                 svg_box_height,
             ),
         )
-        .set("width", args.panel_width)
+        .set("width", args.panel_width * 2.0)
         .set("height", svg_box_height)
         .set("preserveAspectRatio", "none")
         .set("id", "WholeGenomeViwer")        
@@ -453,6 +453,13 @@ fn main() -> Result<(), std::io::Error> {
             .set("overflow", "visible");
     
             sub_svg.append(group);
+            let text = element::Text::new()
+            .set("x", 0.0)
+            .set("y", y_offset+20.0)
+            .set("font-size", "20px")
+            .set("font-family", "monospace")
+            .add(node::Text::new(target_aln_block_record.1.clone()));
+            document.append(text);
             document.append(sub_svg);
             y_offset += 130.0;
         });
@@ -477,48 +484,30 @@ fn main() -> Result<(), std::io::Error> {
             if (event.target.readyState === "complete") {
                 var views = document.getElementsByClassName("chr_view");
                 for (let i = 0; i < views.length; i++) {
-                    views[i].addEventListener('wheel', function(event) {
+                    views[i].addEventListener('mousedown', function(event) {
                         event.preventDefault();
                         const viewBoxValues = views[i].getAttribute('viewBox').split(' ').map(val => parseFloat(val));
                         let viewBox = { x: viewBoxValues[0], y: viewBoxValues[1], width: viewBoxValues[2], height: viewBoxValues[3] };
-                
-                        // Scaling factor determines the zoom speed
-                        const scalingFactor = 0.05;
-                        
-                        // Cross-browser wheel delta
-                        const delta = -1 * event.wheelDelta || event.deltaY || event.detail;
-                
-                        // Calculate the zoom factor.
-                        const zoomFactor = delta > 0 ? (1 + scalingFactor) : (1 - scalingFactor);
-
-                        // Get mouse position (relative to the SVG element).
-                        const rect = views[i].getBoundingClientRect();
-                        const mouseX = event.clientX - rect.left;
-                        console.log([rect, mouseX]);
-                        
-                
-                        // Convert mouse position to SVG coordinates.
-                        const svgMouseX = viewBox.x + (mouseX / rect.width) * viewBox.width;
-
-                        viewBox.width *= zoomFactor;
-                        viewBox.height = 130;
-                        
-                        // Adjust the viewBox values to keep the zoom centered
-                        //viewBox.x = svgMouseX  - mouseX * (viewBox.width / rect.width);
-                        viewBox.x = 0;
-                        viewBox.y = -20;
-                        
-                        // Update the SVG's viewBox attribute
+                        console.log(event);
+                        if (event.button != 0) {
+                            return;
+                        }
+                        if (event.altKey) {
+                            scalingFactor = 1.25;
+                        } else {
+                            scalingFactor = 0.8; 
+                        };
+                        viewBox.width *= scalingFactor;
                         views[i].setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`);
                     });
-            
                 };
             }
         });
         </script>
         "#;
-        writeln!(out_file, r#"<html><body><div style="overflow:scroll;">"#).expect("can't write the output html file");
+        writeln!(out_file, r#"<html><body>"#).expect("can't write the output html file");
         writeln!(out_file, "{}", jscript).expect("can't write the output html file");
+        writeln!(out_file, r#"<div style="overflow:scroll;">"#).expect("can't write the output html file");
     };
 
     writeln!(
@@ -611,13 +600,7 @@ fn get_chr_svg_group(
             });
         }
     };
-    let text = element::Text::new()
-        .set("x", 0.0)
-        .set("y", y - 10.0)
-        .set("font-size", "20px")
-        .set("font-family", "monospace")
-        .add(node::Text::new(target_aln_block_record.1.clone()));
-    group.append(text);
+
     if let Some(tgt_to_alt_qry_records) = tgt_to_alt_qry_records.get(&target_aln_block_record.1) {
         let t_offset = 0.0;
         tgt_to_alt_qry_records.iter().for_each(|record| {
