@@ -368,7 +368,7 @@ fn main() -> Result<(), std::io::Error> {
                                     .into_iter()
                                     .map(|((ts, te), (qs, qe))| {
                                         let ts = ts - kmer_size; // add one to ensure a match base if the first call is deletion
-                                        let te = te;
+                                        //let te = te;
                                         let qs = if orientation == 0 { qs - kmer_size } else { qs };
                                         let qe = if orientation == 0 { qe } else { qe + kmer_size };
                                         let s0str = ref_seq[ts as usize..te as usize].to_vec();
