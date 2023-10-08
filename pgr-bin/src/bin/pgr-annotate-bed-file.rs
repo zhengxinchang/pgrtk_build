@@ -20,6 +20,9 @@ struct CmdOptions {
     annotation_path: String,
     /// the prefix of the output files
     output_path: String,
+    /// type 
+    #[clap(long, default_value = "transcript")]
+    feature: String,
     /// number of threads used in parallel (more memory usage), default to "0" using all CPUs available or the number set by RAYON_NUM_THREADS
     #[clap(long, default_value_t = 0)]
     number_of_thread: usize,
@@ -45,10 +48,10 @@ fn main() -> Result<(), std::io::Error> {
             let chr = fields[0].to_string();
             let f_type = fields[2].to_string();
             let fs = fields[3].parse::<u32>().expect(&err_msg);
-            let fe = fields[4].parse::<u32>().expect(&err_msg);
+            let fe = fields[4].parse::<u32>().expect(&err_msg) + 1;
             let strand = fields[6].chars().next().expect(&err_msg);
             let attribute = fields[8].to_string();
-            if f_type == "transcript" {
+            if f_type == args.feature {
                 let e = annotation_interval
                     .entry(chr)
                     .or_insert(IntervalMap::<u32, (char, String)>::default());
