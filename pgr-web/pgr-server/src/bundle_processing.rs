@@ -667,7 +667,7 @@ r#".{bundle_class} {{fill:{bundle_color}; stroke:{stroke_color}; stroke-width:{s
         format!(".region {{ stroke-opacity: 0.5 }};"),
     ];
     css_strings.extend(bundle_class_styles.values().cloned());
-    let h_factor = h_factor;
+    //let h_factor = h_factor;
     css_strings.push(format!(
         r#"path.highlighted {{transform: scaleY({h_factor}); fill-opacity:1}}"#
     ));
