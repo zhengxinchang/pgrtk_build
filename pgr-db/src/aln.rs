@@ -3,9 +3,9 @@ use crate::seq_db::{self, FragmentHit};
 use crate::shmmrutils::{self, ShmmrSpec};
 use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use wavefront_aln::*;
-use  std::cmp::Ordering;
 
 pub type HitPair = ((u32, u32, u8), (u32, u32, u8)); //(bgn1, end1, orientation1),  (bgn2, end2, orientation2)
 
@@ -266,7 +266,7 @@ pub fn wfa_align_bases(
     }
 }
 
-pub fn wfa_aln_pair_map(aln_target_str: &str, aln_query_str: &str) -> Vec<(u32, u32, char)> {
+pub fn aln_pair_map(aln_target_str: &str, aln_query_str: &str) -> Vec<(u32, u32, char)> {
     let paired = std::iter::zip(aln_target_str.as_bytes(), aln_query_str.as_bytes());
     let mut t_pos = 0_u32;
     let mut q_pos = 0_u32;
@@ -324,8 +324,8 @@ pub fn get_variants_from_aln_pair_map(
 
         match v_type {
             'X' => Some((
-                previous_match.0+1,
-                previous_match.1+1,
+                previous_match.0 + 1,
+                previous_match.1 + 1,
                 'X',
                 t_variant_segment,
                 q_variant_segment,
@@ -387,7 +387,7 @@ pub fn get_variants_from_aln_pair_map(
 }
 
 type AlignmentResult = Vec<(u32, u32, char, String, String)>;
-pub fn get_variant_segments(
+pub fn get_wfa_variant_segments(
     target_str: &[u8],
     query_str: &[u8],
     left_padding: usize,
@@ -423,7 +423,6 @@ pub fn get_variant_segments(
         open_penalty,
         extension_penalty,
     ) {
-
         /*
         // print out the alignment string for debugging
 
@@ -435,9 +434,9 @@ pub fn get_variant_segments(
         // let r_aln_query_str = String::from_utf8_lossy(&r_aln_query_str[..]);
         // println!("XX: {}", r_aln_target_str);
         // println!("XX: {}", r_aln_query_str);
-        */ 
+        */
 
-        let mut aln_pairs = wfa_aln_pair_map(&aln_target_str, &aln_query_str);
+        let mut aln_pairs = aln_pair_map(&aln_target_str, &aln_query_str);
         // assume the base on the left are identical  ( # of base = left_padding)
         (0..left_padding).for_each(|delta| {
             aln_pairs.push((
@@ -452,6 +451,178 @@ pub fn get_variant_segments(
             *q_pos = q_len_minus_one - *q_pos;
         });
         aln_pairs.reverse();
+
+        // compute the VCF like variant representation
+        let target_str = String::from_utf8_lossy(target_str);
+        let query_str = String::from_utf8_lossy(query_str);
+        Some(get_variants_from_aln_pair_map(
+            &aln_pairs,
+            &target_str,
+            &query_str,
+        ))
+    } else {
+        None
+    }
+}
+
+pub fn sw_align_bases(
+    target_str: &str,
+    query_str: &str,
+    mismatch_penalty: i32,
+    open_penalty: i32,
+    extension_penalty: i32,
+) -> Option<(String, String)> {
+    let target_str = target_str.as_bytes();
+    let query_str = query_str.as_bytes();
+
+    let t_len = target_str.len();
+    let q_len = query_str.len();
+
+    // initial condition for j = 0
+    let mut match_scores = (0..t_len + 1)
+        .map(|i| {
+            if i == 0 {
+                0
+            } else {
+                -open_penalty - (i as i32) * extension_penalty
+            }
+        })
+        .collect::<Vec<i32>>();
+
+    let mut e_scores = (0..t_len + 1)
+        .map(|i| {
+            if i == 0 {
+                i32::MIN
+            } else {
+                -open_penalty - (i as i32) * extension_penalty
+            }
+        })
+        .collect::<Vec<i32>>();
+    let mut f_scores = vec![i32::MIN; t_len + 1];
+
+    let mut trace_back = (0..t_len + 1)
+        .map(|_| vec![(0_i8, 0_i8); q_len + 1])
+        .collect::<Vec<_>>();
+
+    for row in trace_back.iter_mut().skip(1).take(t_len) {
+        row[0] = (-1, 0);
+    }
+
+    for j in 1..q_len + 1 {
+        // for i = 0
+        let p_match_score = match_scores.clone();
+        match_scores[0] = -open_penalty - (j as i32) * extension_penalty;
+        e_scores[0] = i32::MIN;
+        f_scores[0] = -open_penalty - (j as i32) * extension_penalty;
+        trace_back[0][j] = (0, -1);
+
+        for i in 1..t_len + 1 {
+            let s = p_match_score[i - 1]
+                - (if target_str[i - 1] == query_str[j - 1] {
+                    0
+                } else {
+                    mismatch_penalty
+                });
+
+            let e = if e_scores[i - 1] == i32::MIN {
+                i32::MIN
+            } else {
+                e_scores[i - 1] - extension_penalty
+            };
+
+            let f = if f_scores[i] == i32::MIN {
+                i32::MIN
+            } else {
+                f_scores[i] - extension_penalty
+            };
+
+            (trace_back[i][j], match_scores[i]) = if s >= e && s >= f {
+                ((-1, -1), s)
+            } else if e >= f {
+                ((-1, 0), e)
+            } else {
+                ((0, -1), f)
+            };
+
+            let o = match_scores[i] - open_penalty;
+
+            e_scores[i] = if o >= e { o } else { e };
+
+            f_scores[i] = if o >= f { o } else { f }
+        }
+    }
+    let mut t_pos = t_len;
+    let mut q_pos = q_len;
+    let mut aln_t = Vec::<u8>::new();
+    let mut aln_q = Vec::<u8>::new();
+
+    while t_pos != 0 || q_pos != 0 {
+        let d = trace_back[t_pos][q_pos];
+        if d.0 != 0 {
+            t_pos -= 1;
+            aln_t.push(target_str[t_pos]);
+        } else {
+            aln_t.push(b'-');
+        };
+        if d.1 != 0 {
+            q_pos -= 1;
+            aln_q.push(query_str[q_pos]);
+        } else {
+            aln_q.push(b'-');
+        }
+    }
+    aln_t.reverse();
+    aln_q.reverse();
+
+    Some((
+        String::from_utf8_lossy(&aln_t[..]).to_string(),
+        String::from_utf8_lossy(&aln_q[..]).to_string(),
+    ))
+}
+
+pub fn get_sw_variant_segments(
+    target_str: &[u8],
+    query_str: &[u8],
+    left_padding: usize,
+    mismatch_penalty: i32,
+    open_penalty: i32,
+    extension_penalty: i32,
+) -> Option<AlignmentResult> {
+    let t_str = target_str[left_padding..].to_vec();
+    let q_str = query_str[left_padding..].to_vec();
+    let t_str = String::from_utf8_lossy(&t_str[..]);
+    let q_str = String::from_utf8_lossy(&q_str[..]);
+
+    if let Some((aln_target_str, aln_query_str)) = sw_align_bases(
+        &t_str,
+        &q_str,
+        mismatch_penalty,
+        open_penalty,
+        extension_penalty,
+    ) {
+        /*
+        // print out the alignment string for debugging
+
+        // let mut r_aln_target_str = aln_target_str.clone().as_bytes().to_owned();
+        // let mut r_aln_query_str = aln_query_str.clone().as_bytes().to_owned();
+        // r_aln_target_str.reverse();
+        // r_aln_query_str.reverse();
+        // let r_aln_target_str = String::from_utf8_lossy(&r_aln_target_str[..]);
+        // let r_aln_query_str = String::from_utf8_lossy(&r_aln_query_str[..]);
+        // println!("XX: {}", r_aln_target_str);
+        // println!("XX: {}", r_aln_query_str);
+        */
+
+        let mut aln_pairs = Vec::<_>::new();
+        // assume the base on the left are identical  ( # of base = left_padding)
+        (0..left_padding).for_each(|delta| {
+            aln_pairs.push((delta as u32, delta as u32, 'M'));
+        });
+        aln_pairs.extend(
+            aln_pair_map(&aln_target_str, &aln_query_str)
+                .into_iter()
+                .map(|v| (v.0 + left_padding as u32, v.1 + left_padding as u32, v.2)),
+        );
 
         // compute the VCF like variant representation
         let target_str = String::from_utf8_lossy(target_str);
@@ -500,7 +671,7 @@ mod test {
 
     #[test]
     fn test_wfa_align_bases() {
-        use crate::aln::{get_variants_from_aln_pair_map, wfa_align_bases, wfa_aln_pair_map};
+        use crate::aln::{aln_pair_map, get_variants_from_aln_pair_map, wfa_align_bases};
         use log::debug;
         //use simple_logger::SimpleLogger;
         //SimpleLogger::new().init().unwrap();
@@ -509,7 +680,7 @@ mod test {
         if let Some((t_aln_str, q_aln_str)) = wfa_align_bases(t_str, q_str, 20, 2, 2, 1) {
             println!("{}", t_aln_str);
             println!("{}", q_aln_str);
-            let aln_pairs = wfa_aln_pair_map(&t_aln_str, &q_aln_str);
+            let aln_pairs = aln_pair_map(&t_aln_str, &q_aln_str);
             let variants = get_variants_from_aln_pair_map(&aln_pairs, t_str, q_str);
             variants.into_iter().for_each(|(t_pos, q_pos, t, s1, s2)| {
                 println!("{} {} {} {} {}", t_pos, q_pos, t, s1, s2);
@@ -519,9 +690,9 @@ mod test {
     }
 
     #[test]
-    fn test_aggreate_variant() {
+    fn test_wfa_aggreate_variant() {
         use crate::aln::{
-            get_variant_segments, get_variants_from_aln_pair_map, wfa_align_bases, wfa_aln_pair_map,
+            aln_pair_map, get_variants_from_aln_pair_map, get_wfa_variant_segments, wfa_align_bases,
         };
         use log::debug;
         //use simple_logger::SimpleLogger;
@@ -532,7 +703,50 @@ mod test {
             "ACGGAGGTGAGCCTGGGAGCATAGAGGTGGGCCTGGGAGCATGGCGGTGGGGGGGGGCCTGGGAGCACAGGGCGGGCC";
 
         if let Some(aln_res) =
-            get_variant_segments(t_str.as_bytes(), q_str.as_bytes(), 1, Some(128), 3, 3, 1)
+            get_wfa_variant_segments(t_str.as_bytes(), q_str.as_bytes(), 1, Some(128), 3, 3, 1)
+        {
+            aln_res
+                .into_iter()
+                .for_each(|v| println!("{} {} {} {} {}", v.0, v.1, v.2, v.3, v.4));
+        };
+        // TODO: Test the output properly
+    }
+
+    #[test]
+    fn test_sw_align_bases() {
+        use crate::aln::{aln_pair_map, get_variants_from_aln_pair_map, sw_align_bases};
+        use log::debug;
+        //use simple_logger::SimpleLogger;
+        //SimpleLogger::new().init().unwrap();
+        let t_str = "ACATACATGTGTGTGAAAAATATATAAGTAAAAAAAATGCATGAAACCCCAAAAGTTGCATGAAACATACATGAAAATACATGAAAGTTGCATGAAACATACATGAAAAAAGTTGCATGAAACCCCATACATGAAAGTTGCATGAA";
+        let q_str = "ACATACATGTGAAATATAATAAAAGTTGCATGAAAAAACATACATGAAAGTTGCATGAAACATACATGAAAAAAGTTGCAAAAGTTGCATGAAACATACATGAAAATGAAAAAACATACATGAAAGTTGCATGAA";
+        if let Some((t_aln_str, q_aln_str)) = sw_align_bases(t_str, q_str, 2, 2, 1) {
+            println!("{}", t_aln_str);
+            println!("{}", q_aln_str);
+            let aln_pairs = aln_pair_map(&t_aln_str, &q_aln_str);
+            let variants = get_variants_from_aln_pair_map(&aln_pairs, t_str, q_str);
+            variants.into_iter().for_each(|(t_pos, q_pos, t, s1, s2)| {
+                println!("{} {} {} {} {}", t_pos, q_pos, t, s1, s2);
+            });
+        }
+        // TODO: Test the output properly
+    }
+
+    #[test]
+    fn test_sw_aggreate_variant() {
+        use crate::aln::{
+            aln_pair_map, get_sw_variant_segments, get_variants_from_aln_pair_map, sw_align_bases,
+        };
+        use log::debug;
+        //use simple_logger::SimpleLogger;
+        //SimpleLogger::new().init().unwrap();
+        let t_str =
+            "ACGGAGGTGAGCCTGGGAGCATAGAGGTGGGCCTGGGAGCATGGCGGCGGGGGGGGGGCCTGGGAGCACAGGGCGGGCC";
+        let q_str =
+            "ACGGAGGTGAGCCTGGGAGCATAGAGGTGGGCCTGGGAGCATGGCGGTGGGGGGGGGCCTGGGAGCACAGGGCGGGCC";
+
+        if let Some(aln_res) =
+            get_sw_variant_segments(t_str.as_bytes(), q_str.as_bytes(), 1, 3, 3, 1)
         {
             aln_res
                 .into_iter()

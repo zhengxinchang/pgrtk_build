@@ -1,7 +1,7 @@
 const VERSION_STRING: &str = env!("VERSION_STRING");
 use clap::{self, CommandFactory, Parser};
 use iset::IntervalMap;
-use pgr_db::aln::{wfa_align_bases, wfa_aln_pair_map};
+use pgr_db::aln::{wfa_align_bases, aln_pair_map};
 // use rayon::prelude::*;
 use pgr_db::ext::{get_fastx_reader, GZFastaReader};
 use pgr_db::fasta_io::{reverse_complement, SeqRec};
@@ -187,7 +187,7 @@ fn main() -> Result<(), std::io::Error> {
                     wfa_align_bases(&t_str, &q_str, 384, 4, 4, 1)
                 {
                     let mut q_pos_to_t_pos_map = FxHashMap::<u32, u32>::default();
-                    wfa_aln_pair_map(&aln_target_str, &aln_query_str)
+                    aln_pair_map(&aln_target_str, &aln_query_str)
                         .into_iter()
                         .for_each(|(tp, qp, _)| {
                             q_pos_to_t_pos_map.entry(qp).or_insert(tp);

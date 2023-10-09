@@ -310,7 +310,7 @@ fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
         AlnDiff::FailShortSeq
     //} else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
     //    AlnDiff::FailLengthDiff
-    } else if let Some(aln_res) = aln::get_variant_segments(s0str, s1str, 1, Some(384), 4, 4, 1) {
+    } else if let Some(aln_res) = aln::get_wfa_variant_segments(s0str, s1str, 1, Some(384), 4, 4, 1) {
         AlnDiff::Aligned(aln_res)
     } else {
         AlnDiff::FailAln

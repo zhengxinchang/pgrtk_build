@@ -1725,7 +1725,7 @@ pub fn wfa_align_bases(
 ///
 #[pyfunction(signature = (aln_target_str, aln_query_str))]
 pub fn wfa_aln_pair_map(aln_target_str: &str, aln_query_str: &str) -> Vec<(u32, u32, char)> {
-    aln::wfa_aln_pair_map(aln_target_str, aln_query_str)
+    aln::aln_pair_map(aln_target_str, aln_query_str)
 }
 
 /// convert alignment string to alignment pair map
@@ -1766,7 +1766,7 @@ pub fn get_wfa_aln_pair_map(
         open_penalty,
         extension_penalty,
     ) {
-        Some(aln::wfa_aln_pair_map(&aln_target_str, &aln_query_str))
+        Some(aln::aln_pair_map(&aln_target_str, &aln_query_str))
     } else {
         None
     }
@@ -1827,7 +1827,7 @@ pub fn get_variant_segments(
         open_penalty,
         extension_penalty,
     ) {
-        let aln_pairs = aln::wfa_aln_pair_map(&aln_target_str, &aln_query_str);
+        let aln_pairs = aln::aln_pair_map(&aln_target_str, &aln_query_str);
         Some((
             aln::get_variants_from_aln_pair_map(&aln_pairs, target_str, query_str),
             aln_pairs,

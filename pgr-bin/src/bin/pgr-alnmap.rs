@@ -368,7 +368,7 @@ fn main() -> Result<(), std::io::Error> {
                                     .into_iter()
                                     .map(|((ts, te), (qs, qe))| {
                                         let ts = ts - kmer_size; // add one to ensure a match base if the first call is deletion
-                                        //let te = te;
+                                                                 //let te = te;
                                         let qs = if orientation == 0 { qs - kmer_size } else { qs };
                                         let qe = if orientation == 0 { qe } else { qe + kmer_size };
                                         let s0str = ref_seq[ts as usize..te as usize].to_vec();
@@ -381,32 +381,33 @@ fn main() -> Result<(), std::io::Error> {
                                             )
                                         };
 
-                                        let wf_aln_diff: AlnDiff =
-                                            if s0str.len() <= 16 || s1str.len() <= 16 {
-                                                AlnDiff::FailShortSeq
-                                            } else if (s0str.len() as isize - s1str.len() as isize)
-                                                .abs()
-                                                >= 128
-                                            {
-                                                AlnDiff::FailLengthDiff
-                                            } else if s0str[..16] != s1str[..16]
-                                                || s0str[s0str.len() - 16..]
-                                                    != s1str[s1str.len() - 16..]
-                                            {
-                                                AlnDiff::FailEndMatch
-                                            } else if let Some(aln_res) = aln::get_variant_segments(
-                                                &s0str,
-                                                &s1str,
-                                                1,
-                                                Some(384),
-                                                4,
-                                                4,
-                                                1,
-                                            ) {
-                                                AlnDiff::Aligned(aln_res)
-                                            } else {
-                                                AlnDiff::FailAln
-                                            };
+                                        let wf_aln_diff: AlnDiff = if s0str.len() <= 16
+                                            || s1str.len() <= 16
+                                        {
+                                            AlnDiff::FailShortSeq
+                                        } else if s0str[..16] != s1str[..16]
+                                            || s0str[s0str.len() - 16..]
+                                                != s1str[s1str.len() - 16..]
+                                        {
+                                            AlnDiff::FailEndMatch
+                                        } else if (s0str.len() as isize - s1str.len() as isize)
+                                            .abs()
+                                            >= 128
+                                        {
+                                            AlnDiff::FailLengthDiff
+                                        } else if let Some(aln_res) = aln::get_wfa_variant_segments(
+                                            &s0str,
+                                            &s1str,
+                                            1,
+                                            Some(384),
+                                            4,
+                                            4,
+                                            1,
+                                        ) {
+                                            AlnDiff::Aligned(aln_res)
+                                        } else {
+                                            AlnDiff::FailAln
+                                        };
                                         ((ts, te), (qs, qe), orientation, wf_aln_diff)
                                     })
                                     .collect::<Vec<_>>()
