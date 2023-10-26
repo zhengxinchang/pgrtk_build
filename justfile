@@ -14,6 +14,12 @@ build_no_agc:
     maturin build --release --skip-auditwheel --no-default-features
     popd
 
+install_bin_no_agc:
+    cargo install --path pgr-bin --no-default-features
+
+install_bin:
+    cargo install --path pgr-bin/
+
 build:
     #!/usr/bin/env bash
     rustup default stable
@@ -33,3 +39,4 @@ build:
     maturin build --release
     maturin build --release --skip-auditwheel
     popd
+
