@@ -81,7 +81,7 @@ struct ShimmerConfig {
 
 type AlignmentResult = Vec<(u32, u32, char, String, String)>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum AlnDiff {
     Aligned(AlignmentResult),
     FailAln,
@@ -305,17 +305,31 @@ fn group_smps_by_principle_bundle_id(
     rtn_partitions
 }
 
-fn get_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
+fn get_wf_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     let wf_aln_diff: AlnDiff = if s0str.is_empty() || s1str.is_empty() {
         AlnDiff::FailShortSeq
     //} else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
     //    AlnDiff::FailLengthDiff
-    } else if let Some(aln_res) = aln::get_wfa_variant_segments(s0str, s1str, 1, Some(384), 4, 4, 1) {
+    } else if let Some(aln_res) = aln::get_wfa_variant_segments(s0str, s1str, 1, Some(384), 4, 12, 1) {
         AlnDiff::Aligned(aln_res)
     } else {
         AlnDiff::FailAln
     };
     wf_aln_diff
+}
+
+
+fn get_sw_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
+    let wfa_aln_diff: AlnDiff = if s0str.is_empty() || s1str.is_empty() {
+        AlnDiff::FailShortSeq
+    //} else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
+    //    AlnDiff::FailLengthDiff
+    } else if let Some(aln_res) = aln::get_sw_variant_segments(s0str, s1str, 1, 4, 4, 1) {
+        AlnDiff::Aligned(aln_res)
+    } else {
+        AlnDiff::FailAln
+    };
+    wfa_aln_diff
 }
 
 use block_aligner::{cigar::*, scan_block::*, scores::*};
@@ -541,15 +555,23 @@ fn aln_segments(
     let query_seg_sequence = &rec.query_sequence[qs..qe];
 
     let diff =
-        if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() >= 256 {
-            if args.large_indel_call {
-                get_block_aligner_diff(target_seg_sequence, query_seg_sequence)
+        if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() < 256 {
+            let aln_diff = get_wf_aln_diff(target_seg_sequence, query_seg_sequence);
+            if aln_diff == AlnDiff::FailAln { 
+                if target_seg_sequence.len() < (1 << 14) && query_seg_sequence.len() < (1 << 14) {
+                    get_sw_aln_diff(target_seg_sequence, query_seg_sequence)
+                } else {
+                    aln_diff
+                }
             } else {
-                AlnDiff::FailLengthDiff
-            }
+                aln_diff
+            }  
+        } else if target_seg_sequence.len() < (1 << 14) && query_seg_sequence.len() < (1 << 14) {
+                get_sw_aln_diff(target_seg_sequence, query_seg_sequence)
         } else {
-            get_aln_diff(target_seg_sequence, query_seg_sequence)
-        };
+            AlnDiff::FailAln
+        }; 
+        
 
     // println!("XX: {:?}", diff);
     aln_diff_to_records(
@@ -571,21 +593,21 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
     // The alignment quality is not good for some repetitive cases (e.g. chr1:22,577,893-22,579,681)
     // disable it for now
 
-    // if rec.target_sequence.len() < 16384 && rec.query_sequence.len() < 16384 {
-    //     let diff = get_block_aligner_diff(&rec.target_sequence[..], &rec.query_sequence[..]);
-    //     return aln_diff_to_records(
-    //         rec,
-    //         diff,
-    //         &rec.target_name[..],
-    //         0,
-    //         rec.target_sequence.len(),
-    //         &rec.query_name[..],
-    //         0,
-    //         rec.query_sequence.len(),
-    //         "*",
-    //         "*",
-    //     );
-    // }
+    if rec.target_sequence.len() < 16384 && rec.query_sequence.len() < 16384 {
+        let diff = get_sw_aln_diff(&rec.target_sequence[..], &rec.query_sequence[..]);
+        return aln_diff_to_records(
+            rec,
+            diff,
+            &rec.target_name[..],
+            0,
+            rec.target_sequence.len(),
+            &rec.query_name[..],
+            0,
+            rec.query_sequence.len(),
+            "*",
+            "*",
+        );
+    }
 
     // for larger difference, we do bundle alignments to make them to smaller blocks
     let seq_list = vec![
