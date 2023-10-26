@@ -395,6 +395,17 @@ fn main() -> Result<(), std::io::Error> {
                                             >= 128
                                         {
                                             AlnDiff::FailLengthDiff
+                                            // if s0str.len() < 1 << 15 && s1str.len() < 1 << 15 {
+                                            //     if let Some(aln_res) = aln::get_sw_variant_segments(
+                                            //         &s0str, &s1str, 1, 6, 4, 1,
+                                            //     ) {
+                                            //         AlnDiff::Aligned(aln_res)
+                                            //     } else {
+                                            //         AlnDiff::FailLengthDiff
+                                            //     }
+                                            // } else {
+                                            //     AlnDiff::FailLengthDiff
+                                            // }
                                         } else if let Some(aln_res) = aln::get_wfa_variant_segments(
                                             &s0str,
                                             &s1str,
