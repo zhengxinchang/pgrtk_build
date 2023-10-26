@@ -1,0 +1,31 @@
+# Document Start
+# This provide AWS Image Builder Component with Ubuntu 22.04 base image
+name: "pgr-tk"
+description: "Image with PGR-TK pre-install with pangenomic data"
+schemaVersion: 1.0
+phases:
+  - name: build
+    steps:
+      - name: InstallBuildingToolChain
+        action: ExecuteBash
+        inputs:
+          commands:
+            - apt-get update
+            - DEBIAN_FRONTEND=noninteractive
+            - TZ=Etc/UTC
+            - apt-get install -y build-essential git ssh curl clang-14 cmake libssl-dev libssl3 pkg-config python3-pip
+            - mkdir -p /opt
+            - export RUSTUP_HOME=/opt/rustup
+            - export CARGO_HOME=/opt/cargo
+            - bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y"
+            - source /opt/cargo/env && rustup default stable
+            - source /opt/cargo/env && cargo install --locked maturin
+            - GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no" cd /opt/ && git clone --recursive https://github.com/cschin/pgr-tk.git
+            - source /opt/cargo/env && cd /opt/pgr-tk/pgr-bin && cargo install --path .
+            - source /opt/cargo/env && cd /opt/pgr-tk && bash build.sh
+            - pip install numpy
+            - pip install /opt/pgr-tk/target/wheels/pgrtk-*-*-*-linux_x86_64.whl
+            - chown ubuntu:ubuntu -R ${CARGO_HOME}
+            - echo source /opt/cargo/env  >> /home/ubuntu/.bashrc
+
+# Document End
