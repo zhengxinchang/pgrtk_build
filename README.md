@@ -132,11 +132,9 @@ conda install -c bioconda -c conda-forge python_abi libstdcxx-ng=12 libclang13 p
 
 `Segmentation fault (core dumped)`
 
-Usually, because the AGC encounters the version incompatibility issue when it is called by pgr-tk. The well-tested version of AGC is [453c0afd](https://github.com/cschin/agc/tree/453c0afdc54b4aa00fa8e97a63f196931fdb81c4). There are some potential solutions for this error:
+Usually, the issue arises because AGC encounters a version incompatibility when called by pgr-tk. The version of AGC that has been well-tested is [453c0afd](https://github.com/cschin/agc/tree/453c0afdc54b4aa00fa8e97a63f196931fdb81c4). To address this error, consider the following potential solutions:
 
-1. Use Docker or Singularity to compile pgr-tk instead of compiling on your computer. The Docker container must use Ubuntu 20.04.
+1. Compile pgr-tk using Docker or Singularity instead of directly on your computer. Ensure that the Docker container is based on Ubuntu 20.04.
 
-2. Make sure to use the `--recursive` option when cloning the repository. This will also clone the AGC dependency."
-
-
+2. When cloning the pgr-tk repository, make sure to use the `--recursive` option. This will clone the AGC dependency as well."
 
