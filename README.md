@@ -82,6 +82,42 @@ bash build.sh
 
 The build python wheels will be in `target/wheels` which can be installed for ubuntun 20.04 python3.8 distribution. You can install it in the `pgr-tk-build` image as well to test it out.
 
+
+### Build Singularity image
+
+If you have built the pgr-tk in a Docker container, you can use the following steps to build a Singularity image based on your Docker container.
+
+**Step 1: Commit Docker container to image**
+
+```bash
+docker commit <container id> <image name>:<version>
+```
+
+**Step 2: Push Docker image to Docker Hub**
+
+```bash
+docker login # if not already logged in
+docker push <image name>:<version>
+```
+
+**Step 3: Build Singularity image**
+
+```bash
+singularity build ./pgr-tk.v0.5.1.sif docker://<docker_repo>/<image name>:<version>
+```
+
+This will generate a .sif file in the current directory.
+
+**Step 4: Execute**
+
+```bash
+singularity exec --fakeroot -B <host_path>:/<container_path> ./pgr-tk.v0.5.1.sif pgr-mdb test.input test_idx
+```
+
+Replace `<host_path>` with the actual path you wish to bind to the container.
+
+The `--fakeroot` option allows you to build and run images as a "fake" root user.
+
 ## Install stable verison v0.3.6 with Bioconda
 
 If you have a conda install, you can try this to build an conda environment to use pgr-tk v0.3.6 (on linux only):
@@ -91,4 +127,18 @@ conda create -n pgr-tk python=3.8
 conda activate pgr-tk
 conda install -c bioconda -c conda-forge python_abi libstdcxx-ng=12 libclang13 pgr-tk=0.3.6
 ```
+
+## Troubleshooting
+
+`Segmentation fault (core dumped)`
+
+Certainly! Here's the corrected text with spelling errors fixed:
+
+"Usually, because the AGC encounters the version incompatibility issue when it is called by pgr-tk. The well-tested version of AGC is [453c0afd](https://github.com/cschin/agc/tree/453c0afdc54b4aa00fa8e97a63f196931fdb81c4). There are some potential solutions for this error:
+
+1. Use Docker or Singularity to compile pgr-tk instead of compiling on your computer. The Docker container must use Ubuntu 20.04.
+
+2. Make sure to use the `--recursive` option when cloning the repository. This will also clone the AGC dependency."
+
+
 
