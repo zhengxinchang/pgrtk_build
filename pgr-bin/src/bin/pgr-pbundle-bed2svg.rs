@@ -15,7 +15,7 @@ use svg::Document;
 #[clap(author, version)]
 #[clap(about, long_about = None)]
 struct CmdOptions {
-    /// the path to the pricipal bundle bed file
+    /// the path to the principal bundle bed file
     bed_file_path: String,
     /// the prefix of the output file
     output_prefix: String,
