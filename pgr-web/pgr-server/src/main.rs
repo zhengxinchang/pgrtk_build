@@ -2,7 +2,7 @@ pub mod bundle_processing;
 
 use axum::{
     body::{boxed, Body},
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::ws::{WebSocket, WebSocketUpgrade},
     extract::Query,
     http::{Response, StatusCode},
     response,
@@ -11,7 +11,7 @@ use axum::{
     Json, Router,
 };
 use bundle_processing::*;
-use clap::Parser;
+use clap::{self, Parser};
 use pgr_db::ext::*;
 use rustc_hash::FxHashMap;
 use std::net::SocketAddr;
