@@ -32,7 +32,7 @@ struct CmdOptions {
 type TargetSeqLength = Vec<(u32, String, u32)>;
 
 type ShimmerMatchBlock = (String, u32, u32, String, u32, u32, u32);
-type VariantRecord = (String, u32, u32, u8, String, String, String); //t_name, tc, tl, hap_type, tvs, qvs, rec_type
+type VariantRecord = (String, u32, u32, u32, u8, String, String, String); //t_name, tc, tl, aln_block_id, hap_type, tvs, qvs, rec_type
 
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
@@ -62,11 +62,11 @@ fn main() -> Result<(), std::io::Error> {
     let get_variant_recs = |f: BufReader<File>,
                             hap_type: u8|
      -> (
-        Vec<(String, u32, u32, u8, String, String, String)>,
+        Vec<(String, u32, u32, u32, u8, String, String, String)>,
         FxHashMap<u32, Vec<ShimmerMatchBlock>>,
         FxHashMap<u32, Vec<ShimmerMatchBlock>>,
     ) {
-        let mut variant_records = Vec::<(String, u32, u32, u8, String, String, String)>::new();
+        let mut variant_records = Vec::<(String, u32, u32, u32, u8, String, String, String)>::new();
         let mut aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
         let mut unique_aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
 
@@ -74,13 +74,14 @@ fn main() -> Result<(), std::io::Error> {
             if let Ok(line) = line {
                 if line.trim().starts_with('#') {
                     return;
-                }; 
+                };
                 let fields = line.split('\t').collect::<Vec<&str>>();
                 assert!(fields.len() > 3);
                 let rec_type = fields[1];
                 if rec_type.starts_with('V') {
                     assert!(fields.len() == 15 || fields.len() == 17);
                     let err_msg = format!("fail to parse on {}", line);
+                    let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
                     let t_name = fields[2];
                     // let ts = fields[3].parse::<u32>().expect(&err_msg);
                     // let te = fields[4].parse::<u32>().expect(&err_msg);
@@ -98,6 +99,7 @@ fn main() -> Result<(), std::io::Error> {
                         t_name.to_string(),
                         tc,
                         tvs.len() as u32,
+                        aln_block_id,
                         hap_type,
                         tvs.to_string(),
                         qvs.to_string(),
@@ -142,29 +144,30 @@ fn main() -> Result<(), std::io::Error> {
         });
         (variant_records, aln_blocks, unique_aln_blocks)
     };
-    let (hap0_recs, hap0_aln_blocks, hap0_unique_aln_blocks) = get_variant_recs(hap0_alnmap_file, 0);
-    let (hap1_recs, hap1_aln_blocks, hap1_unique_aln_blocks) = get_variant_recs(hap1_alnmap_file, 1);
+    let (hap0_recs, hap0_aln_blocks, hap0_unique_aln_blocks) =
+        get_variant_recs(hap0_alnmap_file, 0);
+    let (hap1_recs, hap1_aln_blocks, hap1_unique_aln_blocks) =
+        get_variant_recs(hap1_alnmap_file, 1);
 
-    let blocks_to_intervals = |blocks: FxHashMap<u32, Vec<ShimmerMatchBlock>>| -> FxHashMap<String, IntervalSet<u32>> {
-        let mut aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
-        blocks.into_iter().for_each(|(_block_id, records)| {
-            records.into_iter().for_each(|rec| {
-                let t_name = rec.0;
-                let bgn = rec.1;
-                let end = rec.2;
-                let interval_set = aln_intervals.entry(t_name).or_default();
-                interval_set.insert(bgn..end);
-            })
-        });
-        aln_intervals
-    };
-
+    let blocks_to_intervals =
+        |blocks: FxHashMap<u32, Vec<ShimmerMatchBlock>>| -> FxHashMap<String, IntervalSet<u32>> {
+            let mut aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
+            blocks.into_iter().for_each(|(_block_id, records)| {
+                records.into_iter().for_each(|rec| {
+                    let t_name = rec.0;
+                    let bgn = rec.1;
+                    let end = rec.2;
+                    let interval_set = aln_intervals.entry(t_name).or_default();
+                    interval_set.insert(bgn..end);
+                })
+            });
+            aln_intervals
+        };
 
     let hap0_aln_intervals = blocks_to_intervals(hap0_aln_blocks);
     let hap1_aln_intervals = blocks_to_intervals(hap1_aln_blocks);
     let hap0_unique_aln_intervals = blocks_to_intervals(hap0_unique_aln_blocks);
     let hap1_unique_aln_intervals = blocks_to_intervals(hap1_unique_aln_blocks);
-    
 
     let mut out_vcf =
         BufWriter::new(File::create(Path::new(&args.output_prefix).with_extension("vcf")).unwrap());
@@ -185,6 +188,8 @@ fn main() -> Result<(), std::io::Error> {
         r#"##FILTER=<ID=OVLP,Description="overlapped alignment block">"#
     )
     .expect("fail to write the vcf file");
+    writeln!(out_vcf, r#"##FILTER=<ID=NC,Description="no diploid call">"#)
+        .expect("fail to write the vcf file");
     writeln!(
         out_vcf,
         r#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#
@@ -198,17 +203,19 @@ fn main() -> Result<(), std::io::Error> {
     )
     .expect("fail to write the vcf file");
 
-    let convert_to_vcf_record = |records: &Vec<VariantRecord>| {
+    let convert_to_vcf_record = |records: &mut Vec<VariantRecord>| {
+        records.sort_by_key(|v| (v.4, v.1, v.3)); // sorted by haplotype index, start reference start coordinate, aln_block
         let mut ref_bases = FxHashSet::<(u32, char)>::default();
-        let mut h0alleles = Vec::<(u32, VariantRecord)>::new();
-        let mut h1alleles = Vec::<(u32, VariantRecord)>::new();
-        let mut al_idx_map = FxHashMap::<(u32, String, String), u32>::default();
+        let mut h0alleles = FxHashMap::<u32, Vec<VariantRecord>>::default();
+        let mut h1alleles = FxHashMap::<u32, Vec<VariantRecord>>::default();
+
+        let mut al_idx_map = FxHashMap::<(u8, u32), u32>::default();
         let mut al_idx = 0_u32;
 
         let ref_name = records.first().unwrap().0.clone();
         let mut rec_type = Option::<String>::None;
         records.iter().for_each(|rec| {
-            let (_t_name, ts, tl, ht, vts, vqs, rt) = rec;
+            let (_t_name, ts, tl, aln_block_id, ht, vts, _vqs, rt) = rec;
 
             if rec_type.is_none() && (rt == "V_D" || rt == "V_O") {
                 rec_type = Some(rt.clone());
@@ -219,21 +226,21 @@ fn main() -> Result<(), std::io::Error> {
                 ref_bases.insert((*ts + t_pos, vts[t_pos as usize]));
             });
 
-            let key = (*ts, vts.clone(), vqs.clone());
+            let key = (*ht, *aln_block_id);
 
-            al_idx_map.entry(key).or_insert_with(|| {
+            let al_idx2 = al_idx_map.entry(key).or_insert_with(|| {
                 al_idx += 1;
                 al_idx
             });
 
             if *ht == 0 {
-                h0alleles.push((al_idx, rec.clone()));
+                h0alleles.entry(*al_idx2).or_default().push(rec.clone());
             };
             if *ht == 1 {
-                h1alleles.push((al_idx, rec.clone()));
+                h1alleles.entry(*al_idx2).or_default().push(rec.clone());
             };
         });
- 
+
         let mut ref_bases = ref_bases.into_iter().collect::<Vec<_>>();
         ref_bases.sort();
         let ref_str = String::from_iter(ref_bases.iter().map(|(_, c)| *c).collect::<Vec<_>>());
@@ -243,10 +250,25 @@ fn main() -> Result<(), std::io::Error> {
 
         let mut query_alleles = al_idx_map
             .iter()
-            .map(|((ts, tvs, qvs), &al_idx)| {
-                let t_prefix = ref_str[0..(ts - ts0) as usize].to_string();
-                let t_suffix = ref_str[(ts + tvs.len() as u32 - ts0) as usize..].to_string();
-                (al_idx, [t_prefix, qvs.clone(), t_suffix].join(""))
+            .map(|(&(ht, _block_id), &al_idx)| {
+                let alleles = if ht == 0 {
+                    h0alleles.get(&al_idx).unwrap().clone()
+                } else {
+                    h1alleles.get(&al_idx).unwrap().clone()
+                };
+                let mut allele_str = Vec::<String>::new();
+                let mut offset = 0usize;
+                alleles
+                    .iter()
+                    .for_each(|(_t_name, ts, tl, _aln_block_id, _ht, _vts, vqs, _rt)| {
+                        let end = (*ts - ts0) as usize;
+                        allele_str.push(ref_str[offset..end].to_string());
+                        allele_str.push(vqs.clone());
+                        offset = end + *tl as usize;
+                    });
+                allele_str.push(ref_str[offset..].to_string());
+
+                (al_idx, allele_str.join(""))
             })
             .collect::<Vec<_>>();
 
@@ -258,7 +280,6 @@ fn main() -> Result<(), std::io::Error> {
         query_alleles.sort_by_key(|v| v.1.len());
         let mut new_idx = 1u32;
         query_alleles.iter().for_each(|(idx, allele)| {
-            
             if !unique_query_alleles.contains_key(allele) {
                 unique_query_alleles.insert(allele.clone(), new_idx);
                 al_idx_map.insert(*idx, new_idx);
@@ -270,19 +291,32 @@ fn main() -> Result<(), std::io::Error> {
 
         let query_alleles = unique_query_alleles
             .into_iter()
-            .filter(|(_, v)| *v!=0)
-            .map(|(qs,_)| qs.clone())
+            .filter(|(_, v)| *v != 0)
+            .map(|(qs, _)| qs.clone())
             .collect::<Vec<_>>()
             .join(",");
 
         let h0_al_idx = if let Some(i_set) = hap0_aln_intervals.get(&ref_name) {
             if i_set.has_overlap(ts0..ts0 + tl0) {
-                if h0alleles.is_empty() {
-                    "0".to_string()
+                let h0_al_idx = if h0alleles.is_empty() {
+                    vec!["0".to_string()]
                 } else {
-                    let old_idx = h0alleles.last().unwrap().0;
-                    let new_idx = al_idx_map.get(&old_idx).unwrap();
-                    format!("{}", new_idx)
+                    let mut allele_count = FxHashMap::<u32, u32>::default();
+                    h0alleles.keys().for_each(|&idx| {
+                        *allele_count
+                            .entry(*al_idx_map.get(&idx).unwrap())
+                            .or_default() += 1
+                    });
+                    //println!("allele_count: {:?}", allele_count);
+                    allele_count
+                        .keys()
+                        .map(|idx| format!("{}", idx))
+                        .collect::<Vec<_>>()
+                };
+                if h0_al_idx.len() == 1 {
+                    h0_al_idx[0].clone()
+                } else {
+                    ".".to_string()
                 }
             } else {
                 ".".to_string()
@@ -292,12 +326,24 @@ fn main() -> Result<(), std::io::Error> {
         };
         let h1_al_idx = if let Some(i_set) = hap1_aln_intervals.get(&ref_name) {
             if i_set.has_overlap(ts0..ts0 + tl0) {
-                if h1alleles.is_empty() {
-                    "0".to_string()
+                let h1_al_idx = if h1alleles.is_empty() {
+                    vec!["0".to_string()]
                 } else {
-                    let old_idx = h1alleles.last().unwrap().0;
-                    let new_idx = al_idx_map.get(&old_idx).unwrap();
-                    format!("{}", new_idx)
+                    let mut allele_count = FxHashMap::<u32, u32>::default();
+                    h1alleles.keys().for_each(|&idx| {
+                        *allele_count
+                            .entry(*al_idx_map.get(&idx).unwrap())
+                            .or_default() += 1
+                    });
+                    allele_count
+                        .keys()
+                        .map(|idx| format!("{}", idx))
+                        .collect::<Vec<_>>()
+                };
+                if h1_al_idx.len() == 1 {
+                    h1_al_idx[0].clone()
+                } else {
+                    ".".to_string()
                 }
             } else {
                 ".".to_string()
@@ -319,17 +365,25 @@ fn main() -> Result<(), std::io::Error> {
     // currrent_vg_end: represent the end coordinate of the current variant group
     let mut current_vg_end = Option::<(String, u32)>::None;
     variant_records.sort();
-    variant_records
-        .into_iter()
-        .for_each(|(ref_name, ts, tl, ht, vts, vqs, rec_type)| {
+    variant_records.into_iter().for_each(
+        |(ref_name, ts, tl, block_id, ht, vts, vqs, rec_type)| {
             if let Some(current_vg_end) = current_vg_end.clone() {
                 //println!("{} {} {} {} {:?} {}", ref_name, ts, tl, ts + tl ,  currrent_vg_end, variant_group.len()  );
                 if ref_name == current_vg_end.0 && ts < current_vg_end.1 {
-                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
+                    variant_group.push((
+                        ref_name.clone(),
+                        ts,
+                        tl,
+                        block_id,
+                        ht,
+                        vts,
+                        vqs,
+                        rec_type,
+                    ));
                 } else if !variant_group.is_empty() {
                     // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
                     let (vcf_rec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
-                        convert_to_vcf_record(&variant_group);
+                        convert_to_vcf_record(&mut variant_group);
                     let rt = if let Some(g_rec_type) = g_rec_type {
                         if g_rec_type == "V_D" {
                             "DUP"
@@ -340,6 +394,11 @@ fn main() -> Result<(), std::io::Error> {
                         }
                     } else {
                         "PASS"
+                    };
+                    let rt = if rt == "PASS" && gt.contains('.') {
+                        "NC"
+                    } else {
+                        rt
                     };
                     let qv: u32 = if rt != "PASS" { 30 } else { 40 };
                     //writeln!(
@@ -358,19 +417,38 @@ fn main() -> Result<(), std::io::Error> {
                     )
                     .expect("fail to write the vcf file");
                     variant_group.clear();
-                    variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
+                    variant_group.push((
+                        ref_name.clone(),
+                        ts,
+                        tl,
+                        block_id,
+                        ht,
+                        vts,
+                        vqs,
+                        rec_type,
+                    ));
                 }
             } else {
-                variant_group.push((ref_name.clone(), ts, tl, ht, vts, vqs, rec_type));
+                variant_group.push((
+                    ref_name.clone(),
+                    ts,
+                    tl,
+                    block_id,
+                    ht,
+                    vts,
+                    vqs,
+                    rec_type,
+                ));
                 current_vg_end = Some((ref_name, ts + tl));
                 return;
             }
             current_vg_end = Some((ref_name.clone(), ts + tl));
-        });
+        },
+    );
     if !variant_group.is_empty() {
         // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
         let (vcf_rec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
-            convert_to_vcf_record(&variant_group);
+            convert_to_vcf_record(&mut variant_group);
         let rt = if let Some(g_rec_type) = g_rec_type {
             if g_rec_type == "V_D" {
                 "DUP"
