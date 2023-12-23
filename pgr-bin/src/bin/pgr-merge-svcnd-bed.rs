@@ -56,7 +56,7 @@ fn main() {
                 if line.starts_with('#') {
                     return;
                 };
-                let err_msg = format!("faile to parse on {}", line);
+                let err_msg = format!("fail to parse on {}", line);
                 let fields = line.split('\t').collect::<Vec<&str>>();
                 let chr = fields[0].to_string();
                 let bgn = fields[1].parse::<u32>().expect(&err_msg);
