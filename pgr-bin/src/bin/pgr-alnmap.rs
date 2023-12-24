@@ -713,7 +713,9 @@ fn main() -> Result<(), std::io::Error> {
         .iter()
         .for_each(|block: &ShimmerMatchBlock| {
             let e = target_duplicate_intervals.entry(block.0).or_default();
-            e.insert(block.1..block.2);
+            if block.2 > block.1 {
+                e.insert(block.1..block.2);
+            }
         });
 
     let mut target_overlap_intervals = FxHashMap::<u32, IntervalSet<u32>>::default();
@@ -721,7 +723,9 @@ fn main() -> Result<(), std::io::Error> {
         .iter()
         .for_each(|block: &ShimmerMatchBlock| {
             let e = target_overlap_intervals.entry(block.0).or_default();
-            e.insert(block.1..block.2);
+            if block.2 > block.1 {
+                e.insert(block.1..block.2);
+            }
         });
 
     let mut in_aln_sv_and_bed_records = Vec::<(String, u32, u32, String)>::new();
@@ -731,13 +735,21 @@ fn main() -> Result<(), std::io::Error> {
             let q_name = query_name.get(q_idx).unwrap();
             let dup =
                 if let Some(target_duplicate_intervals) = target_duplicate_intervals.get(t_idx) {
-                    target_duplicate_intervals.has_overlap(ts..te)
+                    if te > ts {
+                        target_duplicate_intervals.has_overlap(ts..te)
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 };
 
             let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(t_idx) {
-                target_overlap_intervals.has_overlap(ts..te)
+                if te > ts {
+                    target_overlap_intervals.has_overlap(ts..te)
+                } else {
+                    false
+                }
             } else {
                 false
             };
@@ -936,7 +948,11 @@ fn main() -> Result<(), std::io::Error> {
                         let dup = if let Some(target_duplicate_intervals) =
                             target_duplicate_intervals.get(&t_idx)
                         {
-                            target_duplicate_intervals.has_overlap(ts..te)
+                            if te > ts {
+                                target_duplicate_intervals.has_overlap(ts..te)
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         };
@@ -944,7 +960,11 @@ fn main() -> Result<(), std::io::Error> {
                         let ovlp = if let Some(target_overlap_intervals) =
                             target_overlap_intervals.get(&t_idx)
                         {
-                            target_overlap_intervals.has_overlap(ts..te)
+                            if te > ts {
+                                target_overlap_intervals.has_overlap(ts..te)
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         };
@@ -987,7 +1007,11 @@ fn main() -> Result<(), std::io::Error> {
                         let ovlp = if let Some(target_overlap_intervals) =
                             target_overlap_intervals.get(&t_idx)
                         {
-                            target_overlap_intervals.has_overlap(ts..te)
+                            if te > ts {
+                                target_overlap_intervals.has_overlap(ts..te)
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         };
@@ -1053,7 +1077,11 @@ fn main() -> Result<(), std::io::Error> {
                         let ovlp = if let Some(target_overlap_intervals) =
                             target_overlap_intervals.get(&t_idx)
                         {
-                            target_overlap_intervals.has_overlap(ts..te)
+                            if te > ts {
+                                target_overlap_intervals.has_overlap(ts..te)
+                            } else {
+                                false
+                            }
                         } else {
                             false
                         };
@@ -1118,14 +1146,22 @@ fn main() -> Result<(), std::io::Error> {
 
             let dup =
                 if let Some(target_duplicate_intervals) = target_duplicate_intervals.get(&t_idx) {
-                    target_duplicate_intervals.has_overlap(match_block.1..match_block.2)
+                    if match_block.2 > match_block.1 {
+                        target_duplicate_intervals.has_overlap(match_block.1..match_block.2)
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 };
 
             let ovlp = if let Some(target_overlap_intervals) = target_overlap_intervals.get(&t_idx)
             {
-                target_overlap_intervals.has_overlap(match_block.1..match_block.2)
+                if match_block.2 > match_block.1 {
+                    target_overlap_intervals.has_overlap(match_block.1..match_block.2)
+                } else {
+                    false
+                }
             } else {
                 false
             };
