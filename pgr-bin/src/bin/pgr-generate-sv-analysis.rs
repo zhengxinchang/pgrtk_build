@@ -7,7 +7,6 @@ use rustc_hash::FxHashMap;
 use serde::*;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::ops::Deref;
 use std::path::Path;
 
 /// perform structural variation principle bundle decomposition
