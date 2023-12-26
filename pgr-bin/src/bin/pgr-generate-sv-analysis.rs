@@ -309,14 +309,14 @@ fn get_wf_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
         AlnDiff::FailShortSeq
     //} else if (s0str.len() as isize - s1str.len() as isize).abs() >= 128 {
     //    AlnDiff::FailLengthDiff
-    } else if let Some(aln_res) = aln::get_wfa_variant_segments(s0str, s1str, 1, Some(384), 4, 12, 1) {
+    } else if let Some(aln_res) = aln::get_wfa_variant_segments(s0str, s1str, 1, Some(384), 4, 4, 1)
+    {
         AlnDiff::Aligned(aln_res)
     } else {
         AlnDiff::FailAln
     };
     wf_aln_diff
 }
-
 
 fn get_sw_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     let wfa_aln_diff: AlnDiff = if s0str.is_empty() || s1str.is_empty() {
@@ -330,7 +330,6 @@ fn get_sw_aln_diff(s0str: &[u8], s1str: &[u8]) -> AlnDiff {
     };
     wfa_aln_diff
 }
-
 
 fn aln_diff_to_records(
     rec: &CandidateRecord,
@@ -458,8 +457,9 @@ fn aln_segments(
 
     let diff =
         if (target_seg_sequence.len() as isize - query_seg_sequence.len() as isize).abs() < 256 {
+            //let aln_diff = get_wf_aln_diff(target_seg_sequence, query_seg_sequence);
             let aln_diff = get_wf_aln_diff(target_seg_sequence, query_seg_sequence);
-            if aln_diff == AlnDiff::FailAln { 
+            if aln_diff == AlnDiff::FailAln {
                 if target_seg_sequence.len() < (1 << 14) && query_seg_sequence.len() < (1 << 14) {
                     get_sw_aln_diff(target_seg_sequence, query_seg_sequence)
                 } else {
@@ -467,13 +467,12 @@ fn aln_segments(
                 }
             } else {
                 aln_diff
-            }  
+            }
         } else if target_seg_sequence.len() < (1 << 14) && query_seg_sequence.len() < (1 << 14) {
-                get_sw_aln_diff(target_seg_sequence, query_seg_sequence)
+            get_sw_aln_diff(target_seg_sequence, query_seg_sequence)
         } else {
             AlnDiff::FailAln
-        }; 
-        
+        };
 
     // println!("XX: {:?}", diff);
     aln_diff_to_records(
@@ -490,26 +489,26 @@ fn aln_segments(
     )
 }
 
-fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record> {
+fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Vec<Record>> {
     // use the quick block aligner if the lengths of both sequences < 16384
     // The alignment quality is not good for some repetitive cases (e.g. chr1:22,577,893-22,579,681)
     // disable it for now
 
-    if rec.target_sequence.len() < 16384 && rec.query_sequence.len() < 16384 {
-        let diff = get_sw_aln_diff(&rec.target_sequence[..], &rec.query_sequence[..]);
-        return aln_diff_to_records(
-            rec,
-            diff,
-            &rec.target_name[..],
-            0,
-            rec.target_sequence.len(),
-            &rec.query_name[..],
-            0,
-            rec.query_sequence.len(),
-            "*",
-            "*",
-        );
-    }
+    // if rec.target_sequence.len() < 16384 && rec.query_sequence.len() < 16384 {
+    //     let diff = get_sw_aln_diff(&rec.target_sequence[..], &rec.query_sequence[..]);
+    //     return aln_diff_to_records(
+    //         rec,
+    //         diff,
+    //         &rec.target_name[..],
+    //         0,
+    //         rec.target_sequence.len(),
+    //         &rec.query_name[..],
+    //         0,
+    //         rec.query_sequence.len(),
+    //         "*",
+    //         "*",
+    //     );
+    // }
 
     // for larger difference, we do bundle alignments to make them to smaller blocks
     let seq_list = vec![
@@ -519,10 +518,10 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
 
     let mut sdb = SeqIndexDB::new();
     let shmmr_cfg = ShimmerConfig {
-        w: 23,
-        k: 37,
-        r: 2,
-        min_span: 13,
+        w: 13,
+        k: 13,
+        r: 1,
+        min_span: 1,
         min_cov: 0,
         min_branch_size: 0,
     };
@@ -611,7 +610,7 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
 
     let mut cur_target_seg_bgn = 0u32;
     let mut cur_query_seg_bgn = 0u32;
-    let mut aln_block_records = Vec::<Record>::new();
+    let mut aln_block_records = Vec::<Vec<Record>>::new();
     let mut pre_aln_type = None;
     let mut pre_target_bundles = Vec::<(u32, u32, u8)>::new();
     let mut pre_query_bundles = Vec::<(u32, u32, u8)>::new();
@@ -654,7 +653,7 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
                         if ts != te || qs != qe {
                             // println!("target_segment: {} {} {}", ts, te, te - ts);
                             // println!("query_segment: {} {} {}", qs, qe, qe - qs);
-                            aln_block_records.extend(aln_segments(
+                            aln_block_records.push(aln_segments(
                                 ts,
                                 te,
                                 qs,
@@ -689,7 +688,7 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
                     if q_seg.is_repeat { 1 } else { 0 }
                 );
 
-                aln_block_records.extend(aln_segments(
+                aln_block_records.push(aln_segments(
                     ts,
                     te,
                     qs,
@@ -733,7 +732,7 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Record
     if ts != te && qs != qe {
         //println!("target_e_segment: {} {} {}", ts, te, te - ts);
         //println!("query_e_segment: {} {} {}", qs, qe, qe - qs);
-        aln_block_records.extend(aln_segments(ts, te, qs, qe, rec, "*", "*", args))
+        aln_block_records.push(aln_segments(ts, te, qs, qe, rec, "*", "*", args))
     };
     aln_block_records
 }
@@ -767,7 +766,7 @@ fn main() -> Result<(), std::io::Error> {
             let ctg_orientation = fields[9].parse::<u8>().expect(paser_err_msg);
             let aln_type = fields[10].to_string();
             let target_sequence = fields[11].into();
-            let query_sequence =  fields[12].into();
+            let query_sequence = fields[12].into();
             let rec = CandidateRecord {
                 aln_id,
                 svc_type,
@@ -792,7 +791,7 @@ fn main() -> Result<(), std::io::Error> {
             .expect("can't create the output file"),
     );
 
-    paired_seq_records.into_iter().for_each(|rec| {
+    paired_seq_records.into_iter().enumerate().for_each(|(pair_id, rec)| {
         let aln_block_records = get_aln_block_records(&rec, &args);
 
         writeln!(
@@ -813,84 +812,103 @@ fn main() -> Result<(), std::io::Error> {
         .expect("can't write the alnmap output file");
 
         // generate the alnmap records
-        aln_block_records.iter().for_each(|record| {
-            let rec_out = match record.clone() {
-                Record::Match((tn, ts, te, qn, qs, qe, orientation), target_path, query_path) => {
-                    let match_type = if rec.svc_type.ends_with('D') {
-                        "M_D"
-                    } else if rec.svc_type.ends_with('O') {
-                        "M_O"
-                    } else {
-                        "M"
-                    };
+        aln_block_records
+            .iter()
+            .enumerate()
+            .for_each(|(sub_block_id, records)| {
+                let block_id = (((pair_id + 1) as u64) << 32) | sub_block_id as u64; 
+                records.iter().for_each(|record| {
+                    let rec_out = match record.clone() {
+                        Record::Match(
+                            (tn, ts, te, qn, qs, qe, orientation),
+                            target_path,
+                            query_path,
+                        ) => {
+                            let match_type = if rec.svc_type.ends_with('D') {
+                                "M_D"
+                            } else if rec.svc_type.ends_with('O') {
+                                "M_O"
+                            } else {
+                                "M"
+                            };
 
-                    Some(format!(
-                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        rec.aln_id,
-                        match_type,
-                        tn,
-                        ts,
-                        te,
-                        qn,
-                        qs,
-                        qe,
-                        orientation,
-                        target_path,
-                        query_path
-                    ))
-                }
-                Record::SvCnd((
-                    (tn, ts, te, qn, qs, qe, orientation),
-                    diff,
-                    ctg_orientation,
-                    target_path,
-                    query_path,
-                )) => {
-                    let diff_type = match diff {
-                        AlnDiff::FailAln => 'A',
-                        AlnDiff::_FailEndMatch => 'E',
-                        AlnDiff::FailShortSeq => 'S',
-                        AlnDiff::FailLengthDiff => 'L',
-                        _ => 'U',
-                    };
+                            Some(format!(
+                                "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                block_id,
+                                match_type,
+                                tn,
+                                ts,
+                                te,
+                                qn,
+                                qs,
+                                qe,
+                                orientation,
+                                target_path,
+                                query_path
+                            ))
+                        }
+                        Record::SvCnd((
+                            (tn, ts, te, qn, qs, qe, orientation),
+                            diff,
+                            ctg_orientation,
+                            target_path,
+                            query_path,
+                        )) => {
+                            let diff_type = match diff {
+                                AlnDiff::FailAln => 'A',
+                                AlnDiff::_FailEndMatch => 'E',
+                                AlnDiff::FailShortSeq => 'S',
+                                AlnDiff::FailLengthDiff => 'L',
+                                _ => 'U',
+                            };
 
-                    let svc_type = if rec.svc_type.ends_with('D') {
-                        "S_D"
-                    } else if rec.svc_type.ends_with('O') {
-                        "S_O"
-                    } else {
-                        "S"
-                    };
+                            let svc_type = if rec.svc_type.ends_with('D') {
+                                "S_D"
+                            } else if rec.svc_type.ends_with('O') {
+                                "S_O"
+                            } else {
+                                "S"
+                            };
 
-                    Some(format!(
-                        "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        rec.aln_id,
-                        svc_type,
-                        tn,
-                        ts,
-                        te,
-                        qn,
-                        qs,
-                        qe,
-                        orientation,
-                        ctg_orientation,
-                        diff_type,
-                        target_path,
-                        query_path
-                    ))
-                }
-                Record::Variant(match_block, td, qd, tc, vt, tvs, qvs, target_path, query_path) => {
-                    let (tn, ts, te, qn, qs, qe, orientation) = match_block;
-                    let variant_type = if rec.svc_type.ends_with('D') {
-                        "V_D"
-                    } else if rec.svc_type.ends_with('O') {
-                        "V_O"
-                    } else {
-                        "V"
-                    };
-                    Some(format!(
+                            Some(format!(
+                                "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                block_id,
+                                svc_type,
+                                tn,
+                                ts,
+                                te,
+                                qn,
+                                qs,
+                                qe,
+                                orientation,
+                                ctg_orientation,
+                                diff_type,
+                                target_path,
+                                query_path
+                            ))
+                        }
+                        Record::Variant(
+                            match_block,
+                            td,
+                            qd,
+                            tc,
+                            vt,
+                            tvs,
+                            qvs,
+                            target_path,
+                            query_path,
+                        ) => {
+                            let (tn, ts, te, qn, qs, qe, orientation) = match_block;
+                            let variant_type = if rec.svc_type.ends_with('D') {
+                                "V_D"
+                            } else if rec.svc_type.ends_with('O') {
+                                "V_O"
+                            } else {
+                                "V"
+                            };
+                            Some(format!(
                         "{:06}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                        rec.aln_id,
+                        block_id,
                         variant_type,
                         tn,
                         ts,
@@ -908,14 +926,15 @@ fn main() -> Result<(), std::io::Error> {
                         target_path,
                         query_path
                     ))
-                }
-                _ => None,
-            };
-            if let Some(rec_out) = rec_out {
-                writeln!(outpu_alnmap_file, "{}", rec_out)
-                    .expect("can't write the alnmap output file");
-            }
-        });
+                        }
+                        _ => None,
+                    };
+                    if let Some(rec_out) = rec_out {
+                        writeln!(outpu_alnmap_file, "{}", rec_out)
+                            .expect("can't write the alnmap output file");
+                    }
+                });
+            });
     });
 
     Ok(())
