@@ -32,7 +32,7 @@ struct CmdOptions {
 type TargetSeqLength = Vec<(u32, String, u32)>;
 
 type ShimmerMatchBlock = (String, u32, u32, String, u32, u32, u32);
-type VariantRecord = (String, u32, u32, u32, u8, String, String, String); //t_name, tc, tl, aln_block_id, hap_type, tvs, qvs, rec_type
+type VariantRecord = (String, u32, u32, u64, u8, String, String, String); //t_name, tc, tl, aln_block_id, hap_type, tvs, qvs, rec_type
 
 fn main() -> Result<(), std::io::Error> {
     CmdOptions::command().version(VERSION_STRING).get_matches();
@@ -62,13 +62,13 @@ fn main() -> Result<(), std::io::Error> {
     let get_variant_recs = |f: BufReader<File>,
                             hap_type: u8|
      -> (
-        Vec<(String, u32, u32, u32, u8, String, String, String)>,
-        FxHashMap<u32, Vec<ShimmerMatchBlock>>,
-        FxHashMap<u32, Vec<ShimmerMatchBlock>>,
+        Vec<VariantRecord>,
+        FxHashMap<u64, Vec<ShimmerMatchBlock>>,
+        FxHashMap<u64, Vec<ShimmerMatchBlock>>,
     ) {
-        let mut variant_records = Vec::<(String, u32, u32, u32, u8, String, String, String)>::new();
-        let mut aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
-        let mut unique_aln_blocks = FxHashMap::<u32, Vec<ShimmerMatchBlock>>::default();
+        let mut variant_records = Vec::<VariantRecord>::new();
+        let mut aln_blocks = FxHashMap::<u64, Vec<ShimmerMatchBlock>>::default();
+        let mut unique_aln_blocks = FxHashMap::<u64, Vec<ShimmerMatchBlock>>::default();
 
         f.lines().for_each(|line| {
             if let Ok(line) = line {
@@ -81,7 +81,7 @@ fn main() -> Result<(), std::io::Error> {
                 if rec_type.starts_with('V') {
                     assert!(fields.len() == 15 || fields.len() == 17);
                     let err_msg = format!("fail to parse on {}", line);
-                    let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
+                    let aln_block_id = fields[0].parse::<u64>().expect(&err_msg);
                     let t_name = fields[2];
                     // let ts = fields[3].parse::<u32>().expect(&err_msg);
                     // let te = fields[4].parse::<u32>().expect(&err_msg);
@@ -109,7 +109,7 @@ fn main() -> Result<(), std::io::Error> {
 
                 if rec_type.starts_with('M') || rec_type.starts_with('V') {
                     let err_msg = format!("fail to parse on {}", line);
-                    let aln_block_id = fields[0].parse::<u32>().expect(&err_msg);
+                    let aln_block_id = fields[0].parse::<u64>().expect(&err_msg);
                     let t_name = fields[2];
                     let ts = fields[3].parse::<u32>().expect(&err_msg);
                     let te = fields[4].parse::<u32>().expect(&err_msg);
@@ -150,7 +150,7 @@ fn main() -> Result<(), std::io::Error> {
         get_variant_recs(hap1_alnmap_file, 1);
 
     let blocks_to_intervals =
-        |blocks: FxHashMap<u32, Vec<ShimmerMatchBlock>>| -> FxHashMap<String, IntervalSet<u32>> {
+        |blocks: FxHashMap<u64, Vec<ShimmerMatchBlock>>| -> FxHashMap<String, IntervalSet<u32>> {
             let mut aln_intervals = FxHashMap::<String, IntervalSet<u32>>::default();
             blocks.into_iter().for_each(|(_block_id, records)| {
                 records.into_iter().for_each(|rec| {
@@ -209,7 +209,7 @@ fn main() -> Result<(), std::io::Error> {
         let mut h0alleles = FxHashMap::<u32, Vec<VariantRecord>>::default();
         let mut h1alleles = FxHashMap::<u32, Vec<VariantRecord>>::default();
 
-        let mut al_idx_map = FxHashMap::<(u8, u32), u32>::default();
+        let mut al_idx_map = FxHashMap::<(u8, u64), u32>::default();
         let mut al_idx = 0_u32;
 
         let ref_name = records.first().unwrap().0.clone();
@@ -368,7 +368,7 @@ fn main() -> Result<(), std::io::Error> {
     variant_records.into_iter().for_each(
         |(ref_name, ts, tl, block_id, ht, vts, vqs, rec_type)| {
             if let Some(current_vg_end) = current_vg_end.clone() {
-                //println!("{} {} {} {} {:?} {}", ref_name, ts, tl, ts + tl ,  currrent_vg_end, variant_group.len()  );
+                //println!("{} {} {} {} {:?} {}", ref_name, ts, tl, ts + tl ,  current_vg_end, variant_group.len()  );
                 if ref_name == current_vg_end.0 && ts < current_vg_end.1 {
                     variant_group.push((
                         ref_name.clone(),
@@ -381,7 +381,7 @@ fn main() -> Result<(), std::io::Error> {
                         rec_type,
                     ));
                 } else if !variant_group.is_empty() {
-                    // println!("X {} {} {} {}", ref_name, ts, tl, variant_group.len());
+                    //println!("X {} {} {} {} {:?}", ref_name, ts, tl, variant_group.len(), variant_group);
                     let (vcf_rec_ref_name, ts0, ref_str, query_alleles, gt, g_rec_type) =
                         convert_to_vcf_record(&mut variant_group);
                     let rt = if let Some(g_rec_type) = g_rec_type {
