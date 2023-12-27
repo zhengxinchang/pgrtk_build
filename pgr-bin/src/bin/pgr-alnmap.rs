@@ -59,7 +59,7 @@ struct CmdOptions {
     #[clap(long, short, default_value_t = 16)]
     min_span: u32,
 
-    /// max size to do SW for calling structure variants
+    /// overwrite the preset, max size to do SW for calling structure variants
     #[clap(long, short, default_value_t = 1024)]
     max_sw_aln_size: u32,
 
