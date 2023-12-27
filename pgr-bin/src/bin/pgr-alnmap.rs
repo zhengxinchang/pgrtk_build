@@ -11,6 +11,15 @@ use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
+#[derive(Clone, Copy, clap::ValueEnum, Default, Debug)]
+enum OptPreset {
+    Fast,
+    #[default]
+    Default,
+    Detail,
+    Overwrite,
+}
+
 /// Align long contigs and identify potential SV regions with respect to the reference fasta file
 #[derive(Parser, Debug)]
 #[clap(name = "pgr-alnmap")]
@@ -19,24 +28,40 @@ use std::path::Path;
 struct CmdOptions {
     /// path to the reference fasta file
     reference_fasta_path: String,
+
     /// the path to the query assembly contig file
     assembly_contig_path: String,
+
     /// the prefix of the output files
     output_prefix: String,
-    /// number of threads used in parallel (more memory usage), default to "0" using all CPUs available or the number set by RAYON_NUM_THREADS
+
+    /// use preset parameters ( (w,k,r,min_span,max_sw_aln_size) = (80, 55, 4, 64, 1024) for fast, (48, 55, 2, 16, 32864) for detail)
+    #[clap(long, default_value_t, value_enum)]
+    preset: OptPreset,
+
+    ///number of threads used in parallel (more memory usage), default to "0" using all CPUs available or the number set by RAYON_NUM_THREADS
     #[clap(long, default_value_t = 0)]
     number_of_thread: usize,
-    #[clap(long, short, default_value_t = 80)]
+
+    /// overwrite the preset, minimizer window size: w 
+    #[clap(long, short, default_value_t = 48)]
     w: u32,
-    /// minimizer k-mer size
+
+    /// overwrite the preset, minimizer k-mer size
     #[clap(long, short, default_value_t = 55)]
     k: u32,
-    /// sparse minimizer (shimmer) reduction factor
-    #[clap(long, short, default_value_t = 3)]
+
+    /// overwrite the preset, sparse minimizer (shimmer) reduction factor
+    #[clap(long, short, default_value_t = 2)]
     r: u32,
-    /// min span for neighboring minimizers
-    #[clap(long, short, default_value_t = 64)]
+
+    /// overwrite the preset, min span for neighboring minimizers
+    #[clap(long, short, default_value_t = 16)]
     min_span: u32,
+
+    /// max size to do SW for calling structure variants
+    #[clap(long, short, default_value_t = 1024)]
+    max_sw_aln_size: u32,
 
     /// the gap penalty factor for sparse alignments in the SHIMMER space
     #[clap(long, default_value_t = 0.025)]
@@ -52,7 +77,15 @@ struct CmdOptions {
 
     /// if specified, generate fasta files for the sequence covering the SV candidates
     #[clap(long, short, default_value_t = false)]
-    sv_candidate_seq_file: bool,
+    skip_uncalled_sv_seq_file: bool,
+}
+
+struct Parameters {
+    w: u32,
+    k: u32,
+    r: u32,
+    min_span: u32,
+    max_sw_aln_size: u32,
 }
 
 type ShimmerMatchBlock = (u32, u32, u32, u32, u32, u32, u32); //t_idx, ts, ted, q_idx, ts, te, orientation
@@ -185,12 +218,44 @@ fn main() -> Result<(), std::io::Error> {
         .unwrap();
 
     let mut ref_seq_index_db = SeqIndexDB::new();
+
+    let parameters = match args.preset {
+        OptPreset::Fast => Parameters {
+            w: 80,
+            k: 55,
+            r: 4,
+            min_span: 64,
+            max_sw_aln_size: 1 << 10,
+        },
+        OptPreset::Default => Parameters {
+            w: 48,
+            k: 55,
+            r: 2,
+            min_span: 16,
+            max_sw_aln_size: 1 << 10,
+        },
+        OptPreset::Detail => Parameters {
+            w: 48,
+            k: 55,
+            r: 2,
+            min_span: 16,
+            max_sw_aln_size: 1 << 15,
+        },
+        OptPreset::Overwrite => Parameters {
+            w: args.w,
+            k: args.k,
+            r: args.r,
+            min_span: args.min_span,
+            max_sw_aln_size: args.max_sw_aln_size,
+        },
+    };
+
     ref_seq_index_db.load_from_fastx(
         args.reference_fasta_path,
-        args.w,
-        args.k,
-        args.r,
-        args.min_span,
+        parameters.w,
+        parameters.k,
+        parameters.r,
+        parameters.min_span,
         true,
     )?;
 
@@ -224,7 +289,7 @@ fn main() -> Result<(), std::io::Error> {
     let mut out_ctgsv = BufWriter::new(
         File::create(Path::new(&args.output_prefix).with_extension("ctgsv.bed")).unwrap(),
     );
-    let mut out_sv_seq_file = if args.sv_candidate_seq_file {
+    let mut out_sv_seq_file = if !args.skip_uncalled_sv_seq_file {
         Some(BufWriter::new(
             File::create(Path::new(&args.output_prefix).with_extension("svcnd.seqs")).unwrap(),
         ))
@@ -249,7 +314,7 @@ fn main() -> Result<(), std::io::Error> {
         GZFastaReader::RegularFile(reader) => add_seqs(&mut reader.into_iter()),
     };
 
-    let kmer_size = args.k;
+    let kmer_size = parameters.k;
 
     let query_name = query_seqs
         .iter()
@@ -394,18 +459,20 @@ fn main() -> Result<(), std::io::Error> {
                                             .abs()
                                             >= 128
                                         {
-                                            AlnDiff::FailLengthDiff
-                                            // if s0str.len() < 1 << 15 && s1str.len() < 1 << 15 {
-                                            //     if let Some(aln_res) = aln::get_sw_variant_segments(
-                                            //         &s0str, &s1str, 1, 6, 4, 1,
-                                            //     ) {
-                                            //         AlnDiff::Aligned(aln_res)
-                                            //     } else {
-                                            //         AlnDiff::FailLengthDiff
-                                            //     }
-                                            // } else {
-                                            //     AlnDiff::FailLengthDiff
-                                            // }
+                                            // AlnDiff::FailLengthDiff
+                                            if s0str.len() < parameters.max_sw_aln_size as usize
+                                                && s1str.len() < parameters.max_sw_aln_size as usize
+                                            {
+                                                if let Some(aln_res) = aln::get_sw_variant_segments(
+                                                    &s0str, &s1str, 1, 4, 4, 1,
+                                                ) {
+                                                    AlnDiff::Aligned(aln_res)
+                                                } else {
+                                                    AlnDiff::FailAln
+                                                }
+                                            } else {
+                                                AlnDiff::FailLengthDiff
+                                            }
                                         } else if let Some(aln_res) = aln::get_wfa_variant_segments(
                                             &s0str,
                                             &s1str,
