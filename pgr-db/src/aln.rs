@@ -472,9 +472,10 @@ pub fn sw_align_bases(
     open_penalty: i32,
     extension_penalty: i32,
 ) -> Option<(String, String)> {
-    let target_str = target_str.as_bytes();
-    let query_str = query_str.as_bytes();
-
+    let mut target_str = (*target_str).as_bytes().to_vec();
+    let mut query_str = (*query_str).as_bytes().to_vec();
+    target_str.reverse();
+    query_str.reverse();
     let t_len = target_str.len();
     let q_len = query_str.len();
 
@@ -536,9 +537,9 @@ pub fn sw_align_bases(
                 f_scores[i] - extension_penalty
             };
 
-            (trace_back[i][j], match_scores[i]) = if s >= e && s >= f {
+            (trace_back[i][j], match_scores[i]) = if s > e && s > f {
                 ((-1, -1), s)
-            } else if e >= f {
+            } else if e > f {
                 ((-1, 0), e)
             } else {
                 ((0, -1), f)
@@ -546,9 +547,9 @@ pub fn sw_align_bases(
 
             let o = match_scores[i] - open_penalty;
 
-            e_scores[i] = if o >= e { o } else { e };
+            e_scores[i] = if o > e { o } else { e };
 
-            f_scores[i] = if o >= f { o } else { f }
+            f_scores[i] = if o > f { o } else { f }
         }
     }
     let mut t_pos = t_len;
@@ -571,8 +572,8 @@ pub fn sw_align_bases(
             aln_q.push(b'-');
         }
     }
-    aln_t.reverse();
-    aln_q.reverse();
+    //aln_t.reverse();
+    //aln_q.reverse();
 
     Some((
         String::from_utf8_lossy(&aln_t[..]).to_string(),
