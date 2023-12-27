@@ -470,7 +470,7 @@ pub fn guided_shmmr_dbg_consensus(
 
 /// perform error correction using shimmer alignment
 ///
-/// this methods try to perseve SNP specific to a guide read (the first one in the list)
+/// this methods try to preserve SNP specific to a guide read (the first one in the list)
 /// if there is more or equal to the "min_cov"
 ///
 ///
@@ -508,7 +508,7 @@ pub fn shmmr_sparse_aln_consensus(
 
 /// perform error correction using shimmer alignment
 ///
-/// this methods try to perseve SNP specific to a guide read (the first one in the list)
+/// this methods try to preserve SNP specific to a guide read (the first one in the list)
 /// if there is more or equal to the "min_cov"
 ///
 ///
