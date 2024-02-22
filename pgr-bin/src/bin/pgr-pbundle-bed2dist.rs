@@ -43,7 +43,7 @@ fn align_bundles(
     q_bundles: &Vec<BundleSegment>,
     t_bundles: &Vec<BundleSegment>,
     local_aln: bool,
-) -> (f32, usize, usize, i64) {
+) -> (f32, usize, usize, i64, isize) {
     let q_count = q_bundles.len();
     let t_count = t_bundles.len();
     let mut s_map = FxHashMap::<(usize, usize), i64>::default();
@@ -112,6 +112,7 @@ fn align_bundles(
         });
     let mut q_idx = if local_aln {best_q_idx} else {q_count - 1};
     let mut t_idx = if local_aln {best_t_idx} else {t_count - 1};
+    let offset = q_bundles[q_idx].bgn as isize - t_bundles[t_idx].bgn as isize; 
     let mut diff_len = 0_usize;
     let mut max_len = 1_usize;
     while let Some(aln_type) = t_map.get(&(q_idx, t_idx)) {
@@ -154,7 +155,7 @@ fn align_bundles(
         );
             */
     }
-    (diff_len as f32 / max_len as f32, diff_len, max_len, best_score)
+    (diff_len as f32 / max_len as f32, diff_len, max_len, best_score, offset)
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -211,6 +212,7 @@ fn main() -> Result<(), std::io::Error> {
     let mut out_file = BufWriter::new(File::create(out_path).expect("can't create the dist file"));
 
     let mut dist_map = FxHashMap::<(usize, usize), f32>::default();
+    let mut offset_map = FxHashMap::<(usize, usize), isize>::default();
 
     (0..n_ctg)
         .flat_map(|ctg_idx0| (0..n_ctg).map(move |ctg_idx1| (ctg_idx0, ctg_idx1)))
@@ -220,30 +222,34 @@ fn main() -> Result<(), std::io::Error> {
             };
             let (ctg0, bundles0) = &ctg_data[ctg_idx0];
             let (ctg1, bundles1) = &ctg_data[ctg_idx1];
-            let (dist0, diff_len0, max_len0, best_score0) = align_bundles(bundles0, bundles1, args.local_aln);
-            let (dist1, diff_len1, max_len1, best_score1) = align_bundles(bundles1, bundles0, args.local_aln);
-            let (dist, diff_len, max_len, best_score) = if dist0 > dist1 {
-                (dist0, diff_len0, max_len0, best_score0)
+            let (dist0, diff_len0, max_len0, best_score0, best_offset0) = align_bundles(bundles0, bundles1, args.local_aln);
+            let (dist1, diff_len1, max_len1, best_score1, best_offset1) = align_bundles(bundles1, bundles0, args.local_aln);
+            let (dist, diff_len, max_len, best_score ) = if dist0 > dist1 {
+                (dist0, diff_len0, max_len0, best_score0 )
             } else {
-                (dist1, diff_len1, max_len1, best_score1)
+                (dist1, diff_len1, max_len1, best_score1 )
             };
             writeln!(
                 out_file,
-                "{} {} {} {} {} {}",
-                ctg0, ctg1, dist, diff_len, max_len, best_score
+                "{} {} {} {} {} {} {}",
+                ctg0, ctg1, dist, diff_len, max_len, best_score, best_offset0
             )
             .expect("writing error");
             if ctg_idx1 != ctg_idx0 {
                 writeln!(
                     out_file,
-                    "{} {} {} {} {} {}",
-                    ctg1, ctg0, dist, diff_len, max_len, best_score
+                    "{} {} {} {} {} {} {}",
+                    ctg1, ctg0, dist, diff_len, max_len, best_score, -best_offset0
                 )
                 .expect("writing error");
                 if args.local_aln {
-                    dist_map.insert((ctg_idx0, ctg_idx1), 1.0/(best_score as f32 + 10.0).log10());
+                    dist_map.insert((ctg_idx0, ctg_idx1), 0.8/(0.2 * best_score as f32 + 10.0).log10());
+                    offset_map.insert( (ctg_idx0, ctg_idx1), best_offset0);
+                    offset_map.insert( (ctg_idx1, ctg_idx0), -best_offset0);
                 } else {
                     dist_map.insert((ctg_idx0, ctg_idx1), dist);
+                    offset_map.insert( (ctg_idx0, ctg_idx1), 0);
+                    offset_map.insert( (ctg_idx1, ctg_idx0), 0);
                 }
             }
         });
@@ -306,14 +312,56 @@ fn main() -> Result<(), std::io::Error> {
         File::create(Path::new(&args.output_prefix).with_extension("ddg"))
             .expect("can't create the dendrogram file"),
     );
+
+    let mut offset_file = BufWriter::new(
+        File::create(Path::new(&args.output_prefix).with_extension("offset"))
+            .expect("can't create the alignment offset file"),
+    );
+
     let mut node_position_size = FxHashMap::<usize, ((f32, f32), usize)>::default();
     let mut position = 0.0_f32;
+    let mut offset = 0_isize;
+    let mut p_idx: Option<usize> = None; 
+    let mut offset_group = Vec::<_>::new();
+    let mut group_min_offset = 100000_isize;
     nodes.iter().for_each(|&ctg_idx| {
         node_position_size.insert(ctg_idx, ((position, 0.0), 1));
         writeln!(dendrogram_file, "L\t{}\t{}", ctg_idx, ctg_data[ctg_idx].0)
             .expect("can't write the dendrogram file");
         position += 1.0;
+        if let Some(p_idx) = p_idx {
+            let (idx0, idx1) = if p_idx < ctg_idx {
+                (p_idx, ctg_idx)
+            } else {
+                (ctg_idx, p_idx)
+            };
+            if *dist_map.get( &(idx0, idx1) ).unwrap_or(&1.0) < 0.25 {
+
+                offset += *offset_map.get( &(p_idx, ctg_idx) ).unwrap_or(&0);
+                offset_group.push( (ctg_idx, offset) );
+                if offset < group_min_offset {
+                    group_min_offset = offset;
+                };
+            } else {
+                offset_group.iter().for_each(| &(ctg_idx, offset ) | {
+                    writeln!(offset_file, "{}\t{}", ctg_data[ctg_idx].0, offset-group_min_offset)
+                    .expect("can't write the offset file");
+                 });
+                group_min_offset = 100000_isize;
+                offset_group.clear(); 
+                offset = 0; 
+            }
+        } else {
+            offset_group.push( (ctg_idx, offset) );
+        };
+        p_idx = Some(ctg_idx)
     });
+
+    offset_group.iter().for_each(| &(ctg_idx, offset ) | {
+        writeln!(offset_file, "{}\t{}", ctg_data[ctg_idx].0, offset-group_min_offset)
+        .expect("can't write the offset file");
+     });
+
     steps.into_iter().enumerate().for_each(|(c, s)| {
         let ((pos0, _), size0) = *node_position_size.get(&s.cluster1).unwrap();
         let ((pos1, _), size1) = *node_position_size.get(&s.cluster2).unwrap();
