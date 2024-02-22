@@ -16,6 +16,9 @@ struct CmdOptions {
     bed_file_path: String,
     /// the prefix of the output file
     output_prefix: String,
+    /// using local alignment
+    #[clap(long, short, default_value_t = false)]
+    local_aln: bool
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
@@ -39,7 +42,8 @@ enum AlnType {
 fn align_bundles(
     q_bundles: &Vec<BundleSegment>,
     t_bundles: &Vec<BundleSegment>,
-) -> (f32, usize, usize) {
+    local_aln: bool,
+) -> (f32, usize, usize, i64) {
     let q_count = q_bundles.len();
     let t_count = t_bundles.len();
     let mut s_map = FxHashMap::<(usize, usize), i64>::default();
@@ -86,44 +90,49 @@ fn align_bundles(
             best
         };
 
-    //let mut best_score = 0;
-    //let mut best_q_idx = 0;
-    //let mut best_t_idx = 0;
+    let mut best_score = 0;
+    let mut best_q_idx = 0;
+    let mut best_t_idx = 0;
 
     (0..t_count)
         .flat_map(|t_idx| (0..q_count).map(move |q_idx| (q_idx, t_idx)))
         .for_each(|(q_idx, t_idx)| {
             //println!("{} {}", q_idx, t_idx);
             let (_, score) = get_aln_direction_with_best_score(q_idx, t_idx, &s_map);
+
+            let score = if local_aln && score < 0 { 0 } else { score };
+
             s_map.insert((q_idx, t_idx), score);
-            /*
+
             if score > best_score {
                 best_score = score;
                 best_q_idx = q_idx;
                 best_t_idx = t_idx;
             }
-            */
         });
-    let mut q_idx = q_count - 1;
-    let mut t_idx = t_count - 1;
+    let mut q_idx = if local_aln {best_q_idx} else {q_count - 1};
+    let mut t_idx = if local_aln {best_t_idx} else {t_count - 1};
     let mut diff_len = 0_usize;
     let mut max_len = 1_usize;
     while let Some(aln_type) = t_map.get(&(q_idx, t_idx)) {
         // let qq_idx = q_idx;
         // let tt_idx = t_idx;
+        if local_aln && *s_map.get(&(q_idx, t_idx)).unwrap_or(&0) == 0 {
+            break
+        }
         let (diff_len_delta, max_len_delta) = match aln_type {
             AlnType::Match => {
                 let q_len = (q_bundles[q_idx].end as i64 - q_bundles[q_idx].bgn as i64).abs();
                 let t_len = (t_bundles[t_idx].end as i64 - t_bundles[t_idx].bgn as i64).abs();
                 let diff_len_delta = (q_len - t_len).unsigned_abs() as usize;
-                let max_len_delata = if q_len > t_len {
+                let max_len_delta = if q_len > t_len {
                     q_len as usize
                 } else {
                     t_len as usize
                 };
                 q_idx -= 1;
                 t_idx -= 1;
-                (diff_len_delta, max_len_delata)
+                (diff_len_delta, max_len_delta)
             }
             AlnType::Insertion => {
                 let q_len = (q_bundles[q_idx].end as i64 - q_bundles[q_idx].bgn as i64).abs();
@@ -145,7 +154,7 @@ fn align_bundles(
         );
             */
     }
-    (diff_len as f32 / max_len as f32, diff_len, max_len)
+    (diff_len as f32 / max_len as f32, diff_len, max_len, best_score)
 }
 
 fn main() -> Result<(), std::io::Error> {
@@ -211,27 +220,31 @@ fn main() -> Result<(), std::io::Error> {
             };
             let (ctg0, bundles0) = &ctg_data[ctg_idx0];
             let (ctg1, bundles1) = &ctg_data[ctg_idx1];
-            let (dist0, diff_len0, max_len0) = align_bundles(bundles0, bundles1);
-            let (dist1, diff_len1, max_len1) = align_bundles(bundles1, bundles0);
-            let (dist, diff_len, max_len) = if dist0 > dist1 {
-                (dist0, diff_len0, max_len0)
+            let (dist0, diff_len0, max_len0, best_score0) = align_bundles(bundles0, bundles1, args.local_aln);
+            let (dist1, diff_len1, max_len1, best_score1) = align_bundles(bundles1, bundles0, args.local_aln);
+            let (dist, diff_len, max_len, best_score) = if dist0 > dist1 {
+                (dist0, diff_len0, max_len0, best_score0)
             } else {
-                (dist1, diff_len1, max_len1)
+                (dist1, diff_len1, max_len1, best_score1)
             };
             writeln!(
                 out_file,
-                "{} {} {} {} {}",
-                ctg0, ctg1, dist, diff_len, max_len
+                "{} {} {} {} {} {}",
+                ctg0, ctg1, dist, diff_len, max_len, best_score
             )
             .expect("writing error");
             if ctg_idx1 != ctg_idx0 {
                 writeln!(
                     out_file,
-                    "{} {} {} {} {}",
-                    ctg1, ctg0, dist, diff_len, max_len
+                    "{} {} {} {} {} {}",
+                    ctg1, ctg0, dist, diff_len, max_len, best_score
                 )
                 .expect("writing error");
-                dist_map.insert((ctg_idx0, ctg_idx1), dist);
+                if args.local_aln {
+                    dist_map.insert((ctg_idx0, ctg_idx1), 1.0/(best_score as f32 + 10.0).log10());
+                } else {
+                    dist_map.insert((ctg_idx0, ctg_idx1), dist);
+                }
             }
         });
 
