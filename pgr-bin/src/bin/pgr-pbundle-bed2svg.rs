@@ -55,10 +55,10 @@ struct CmdOptions {
     /// the anotation panel width
     #[clap(long, default_value_t = 500.0)]
     annotation_panel_width: f32,
-    /// the factor to increase the bounder width for highlighting repeatitive bundles
+    /// the factor to increase the border width for highlighting repetitive bundles
     #[clap(long, default_value_t = 1.0)]
     highlight_repeats: f32,
-    /// the factor to increase the bounder width for highlighting repeatitive bundles
+    /// the factor to increase the border width for highlighting repetitive bundles
     #[clap(long, default_value_t = false)]
     html: bool,
     /// disable tooltips
