@@ -40,8 +40,8 @@ enum AlnType {
 }
 
 fn align_bundles(
-    q_bundles: &Vec<BundleSegment>,
-    t_bundles: &Vec<BundleSegment>,
+    q_bundles: &[BundleSegment],
+    t_bundles: &[BundleSegment],
     local_aln: bool,
 ) -> (f32, usize, usize, i64, isize) {
     let q_count = q_bundles.len();
@@ -213,7 +213,8 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut dist_map = FxHashMap::<(usize, usize), f32>::default();
     let mut offset_map = FxHashMap::<(usize, usize), isize>::default();
-
+    let mut min_dist = 0.0_f32;
+    let mut max_dist = 1.0_f32;
     (0..n_ctg)
         .flat_map(|ctg_idx0| (0..n_ctg).map(move |ctg_idx1| (ctg_idx0, ctg_idx1)))
         .for_each(|(ctg_idx0, ctg_idx1)| {
@@ -223,7 +224,7 @@ fn main() -> Result<(), std::io::Error> {
             let (ctg0, bundles0) = &ctg_data[ctg_idx0];
             let (ctg1, bundles1) = &ctg_data[ctg_idx1];
             let (dist0, diff_len0, max_len0, best_score0, best_offset0) = align_bundles(bundles0, bundles1, args.local_aln);
-            let (dist1, diff_len1, max_len1, best_score1, best_offset1) = align_bundles(bundles1, bundles0, args.local_aln);
+            let (dist1, diff_len1, max_len1, best_score1, _best_offset1) = align_bundles(bundles1, bundles0, args.local_aln);
             let (dist, diff_len, max_len, best_score ) = if dist0 > dist1 {
                 (dist0, diff_len0, max_len0, best_score0 )
             } else {
@@ -243,7 +244,10 @@ fn main() -> Result<(), std::io::Error> {
                 )
                 .expect("writing error");
                 if args.local_aln {
-                    dist_map.insert((ctg_idx0, ctg_idx1), 0.8/(0.2 * best_score as f32 + 10.0).log10());
+                    let d = 1.0/(best_score as f32 + 10.0).log10();
+                    min_dist = if d < min_dist { d } else { min_dist };
+                    max_dist = if d > max_dist { d } else { max_dist };
+                    dist_map.insert((ctg_idx0, ctg_idx1), 1.0/(best_score as f32 + 10.0).log10());
                     offset_map.insert( (ctg_idx0, ctg_idx1), best_offset0);
                     offset_map.insert( (ctg_idx1, ctg_idx0), -best_offset0);
                 } else {
@@ -254,10 +258,14 @@ fn main() -> Result<(), std::io::Error> {
             }
         });
 
+    let w = max_dist - min_dist + 0.01; 
+    dist_map.iter_mut().for_each(|(_k, v)| {
+        *v = (*v - min_dist + 0.01 ) / w;
+    });
     let mut dist_mat = vec![];
     (0..n_ctg - 1).for_each(|i| {
         (i + 1..n_ctg).for_each(|j| {
-            dist_mat.push(*dist_map.get(&(i, j)).unwrap());
+            dist_mat.push( *dist_map.get(&(i, j)).unwrap() );
         })
     });
     let dend = linkage(&mut dist_mat, n_ctg, Method::Average);

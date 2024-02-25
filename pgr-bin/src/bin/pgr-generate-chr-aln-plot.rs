@@ -7,7 +7,7 @@ use std::fs::File;
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{self, Path};
-use svg::node::{self, element, Node};
+use svg::node::{element, Node};
 use svg::Document;
 
 #[allow(dead_code)] // need the standard names for deserialization if they are not use
@@ -282,12 +282,11 @@ fn main() -> Result<(), std::io::Error> {
                     .set("d", path_str);
                 group.append(path);
 
-                let text = element::Text::new()
+                let text = element::Text::new(target_aln_block_records.1.clone())
                     .set("x", b)
                     .set("y", 0)
                     .set("font-size", "6px")
-                    .set("font-family", "monospace")
-                    .add(node::Text::new(target_aln_block_records.1.clone()));
+                    .set("font-family", "monospace");
                 group.append(text);
 
                 if let Some(ref_highlight) = &ref_highlight {
@@ -453,12 +452,11 @@ fn main() -> Result<(), std::io::Error> {
             .set("overflow", "visible");
     
             sub_svg.append(group);
-            let text = element::Text::new()
+            let text = element::Text::new(target_aln_block_record.1.clone())
             .set("x", 0.0)
             .set("y", y_offset+20.0)
             .set("font-size", "20px")
-            .set("font-family", "monospace")
-            .add(node::Text::new(target_aln_block_record.1.clone()));
+            .set("font-family", "monospace");
             document.append(text);
             document.append(sub_svg);
             y_offset += 130.0;
@@ -573,7 +571,7 @@ fn get_chr_svg_group(
                     .set("opacity", 0.7)
                     .set("stroke-opacity", 0.7)
                     .set("d", path_str);
-                path.append(element::Title::new().add(node::Text::new(c_name.clone())));
+                path.append(element::Title::new(c_name.clone()));
                 group.append(path);
             })
         } else {
@@ -595,7 +593,7 @@ fn get_chr_svg_group(
                     .set("opacity", 0.7)
                     .set("stroke-opacity", 0.7)
                     .set("d", path_str);
-                path.append(element::Title::new().add(node::Text::new(format!("{}-{}", bgn, end))));
+                path.append(element::Title::new(format!("{}-{}", bgn, end)));
                 group.append(path);
             });
         }
@@ -616,10 +614,10 @@ fn get_chr_svg_group(
                 .set("d", path_str);
             let na = "N/A".to_string();
             let q_tgt = ctg2tgt.get(&record.q_name).unwrap_or(&na);
-            path.append(element::Title::new().add(node::Text::new(format!(
+            path.append(element::Title::new(format!(
                 "{} to {} with {}:{}-{}",
                 record.t_name, q_tgt, record.q_name, record.qs, record.qe
-            ))));
+            )));
             group.append(path);
         })
     };
@@ -653,7 +651,7 @@ fn get_chr_svg_group(
                 .set("opacity", 0.7)
                 .set("stroke-opacity", 0.7)
                 .set("d", path_str);
-            path.append(element::Title::new().add(node::Text::new(record.q_name.clone())));
+            path.append(element::Title::new(record.q_name.clone()));
             group.append(path);
 
             if let Some(qry_to_alt_tgt_records) = qry_to_alt_tgt_records.get(&record.q_name) {
@@ -679,10 +677,10 @@ fn get_chr_svg_group(
                         .set("opacity", 0.7)
                         .set("stroke-opacity", 0.7)
                         .set("d", path_str);
-                    path.append(element::Title::new().add(node::Text::new(format!(
+                    path.append(element::Title::new(format!(
                         "{}@{}:{}-{}",
                         record.q_name, record.t_name, record.ts, record.te
-                    ))));
+                    )));
                     group.append(path);
                 });
             };
@@ -739,7 +737,7 @@ fn get_chr_svg_group(
         let orientation = if record.orientation == 0 { '+' } else { '-' };
         let t_dup_mark = if record.t_dup { 1 } else { 0 };
         let q_dup_mark = if record.q_dup { 1 } else { 0 };
-        path.append(element::Title::new().add(node::Text::new(format!(
+        path.append(element::Title::new(format!(
             "{}:{}-{} @ {}:{}-{} {}:{}:{}",
             record.t_name,
             record.ts,
@@ -750,7 +748,7 @@ fn get_chr_svg_group(
             orientation,
             t_dup_mark,
             q_dup_mark
-        ))));
+        )));
 
         group.append(path);
     });

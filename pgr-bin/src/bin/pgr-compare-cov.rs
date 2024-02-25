@@ -48,7 +48,7 @@ struct CmdOptions {
 }
 
 fn filter_and_group_regions(
-    regions: &Vec<(u32, u32, f32, usize, usize)>,
+    regions: &[(u32, u32, f32, usize, usize)],
     max_dist: usize,
     min_range: usize,
 ) -> Vec<(u32, u32, f32, f32, f32)> {

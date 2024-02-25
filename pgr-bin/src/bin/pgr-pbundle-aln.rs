@@ -42,8 +42,8 @@ type AlnPathElement = (usize, usize, AlnType, u32, u32, usize, usize);
 type AlnPath = Vec<AlnPathElement>;
 
 fn align_bundles(
-    q_bundles: &Vec<BundleSegment>,
-    t_bundles: &Vec<BundleSegment>,
+    q_bundles: &[BundleSegment],
+    t_bundles: &[BundleSegment],
 ) -> (f32, usize, usize, AlnPath) {
     let q_count = q_bundles.len();
     let t_count = t_bundles.len();

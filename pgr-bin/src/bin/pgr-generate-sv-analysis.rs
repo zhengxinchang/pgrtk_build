@@ -110,8 +110,8 @@ enum Record {
 }
 
 fn align_bundles(
-    q_bundles: &Vec<BundleSegment>,
-    t_bundles: &Vec<BundleSegment>,
+    q_bundles: &[BundleSegment],
+    t_bundles: &[BundleSegment],
 ) -> (f32, usize, usize, AlnPath) {
     let q_count = q_bundles.len();
     let t_count = t_bundles.len();
@@ -448,7 +448,7 @@ fn aln_segments(
     rec: &CandidateRecord,
     target_bundle_path: &str,
     query_bundle_path: &str,
-    args: &CmdOptions,
+    _args: &CmdOptions,
 ) -> Vec<Record> {
     let target_name = &rec.target_name;
     let query_name = &rec.query_name;
@@ -550,7 +550,6 @@ fn get_aln_block_records(rec: &CandidateRecord, args: &CmdOptions) -> Vec<Vec<Re
         .seq_info
         .unwrap()
         .into_iter()
-        .map(|(k, v)| (k, v))
         .collect::<Vec<_>>();
 
     let bundle_length_cutoff = 0;
