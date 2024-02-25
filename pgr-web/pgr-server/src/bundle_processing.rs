@@ -618,19 +618,18 @@ r#".{bundle_class} {{fill:{bundle_color}; stroke:{stroke_color}; stroke-width:{s
                         .set("class", "bundle ".to_string() + bundle_class.as_str());
                     let mut g = element::Group::new().set("transform", format!("translate({left_padding} {y_offset})"));
                     if !no_tooltips { // it may be good idea to disable it for every large region visualization
-                        p.append(element::Title::new().add(node::Text::new(format!("{}:{}-{}:{}", ctg, bgn0, end0, bundle_id ))));
+                        p.append(element::Title::new(format!("{}:{}-{}:{}", ctg, bgn0, end0, bundle_id )));
                     };
                     g.append(p);
                     g
                 })
                 .collect();
 
-            let text = element::Text::new()
+            let text = element::Text::new(annotation)
                 .set("x", 20.0 + left_padding + track_range * scaling_factor)
                 .set("y", y_offset + 2.0)
                 .set("font-size", "10px")
-                .set("font-family", "monospace")
-                .add(node::Text::new(annotation));
+                .set("font-family", "monospace");
             y_offset += delta_y;
             (ctg, (paths, text))
         })
@@ -704,12 +703,11 @@ r#".{bundle_class} {{fill:{bundle_color}; stroke:{stroke_color}; stroke-width:{s
         tickx += track_tick_interval;
     }
 
-    let text = element::Text::new()
+    let text = element::Text::new(format!("{} bps", track_range))
         .set("x", 20.0 + left_padding + scaling_factor)
         .set("y", -14)
         .set("font-size", "10px")
-        .set("font-family", "sans-serif")
-        .add(node::Text::new(format!("{} bps", track_range)));
+        .set("font-family", "sans-serif");
     document.append(text);
 
     // insert the bundle paths
