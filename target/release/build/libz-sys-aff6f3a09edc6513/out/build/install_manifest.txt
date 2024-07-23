@@ -1,0 +1,8 @@
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/lib/libz.a
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/include/zlib.h
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/include/zlib_name_mangling.h
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/include/zconf.h
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/lib/pkgconfig/zlib.pc
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/lib/libz.a
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/lib/cmake/ZLIB/ZLIB.cmake
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/lib/cmake/ZLIB/ZLIB-release.cmake

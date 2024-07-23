@@ -1,0 +1,34 @@
+Determining if the include file arm_acle.h exists failed with the following output:
+Change Dir: /wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_7ba0e/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_7ba0e.dir/build.make CMakeFiles/cmTC_7ba0e.dir/build
+gmake[1]: Entering directory '/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_7ba0e.dir/CheckIncludeFile.c.o
+/usr/bin/cc   -ffunction-sections -fdata-sections -fPIC -m64  -std=c11 -o CMakeFiles/cmTC_7ba0e.dir/CheckIncludeFile.c.o -c /wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: arm_acle.h: No such file or directory
+    1 | #include <arm_acle.h>
+      |          ^~~~~~~~~~~~
+compilation terminated.
+gmake[1]: *** [CMakeFiles/cmTC_7ba0e.dir/build.make:78: CMakeFiles/cmTC_7ba0e.dir/CheckIncludeFile.c.o] Error 1
+gmake[1]: Leaving directory '/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:127: cmTC_7ba0e/fast] Error 2
+
+
+
+Determining if the include file sys/sdt.h exists failed with the following output:
+Change Dir: /wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/gmake -f Makefile cmTC_65ce6/fast && /usr/bin/gmake  -f CMakeFiles/cmTC_65ce6.dir/build.make CMakeFiles/cmTC_65ce6.dir/build
+gmake[1]: Entering directory '/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_65ce6.dir/CheckIncludeFile.c.o
+/usr/bin/cc   -ffunction-sections -fdata-sections -fPIC -m64  -std=c11 -o CMakeFiles/cmTC_65ce6.dir/CheckIncludeFile.c.o -c /wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: sys/sdt.h: No such file or directory
+    1 | #include <sys/sdt.h>
+      |          ^~~~~~~~~~~
+compilation terminated.
+gmake[1]: *** [CMakeFiles/cmTC_65ce6.dir/build.make:78: CMakeFiles/cmTC_65ce6.dir/CheckIncludeFile.c.o] Error 1
+gmake[1]: Leaving directory '/wd/pgr-tk/target/release/build/libz-sys-aff6f3a09edc6513/out/build/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:127: cmTC_65ce6/fast] Error 2
+
+
+

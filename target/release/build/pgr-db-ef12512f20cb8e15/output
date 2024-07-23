@@ -1,0 +1,9 @@
+cargo:rustc-link-lib=agc
+cargo:rustc-link-search=/wd/pgr-tk/target/release/build/pgr-db-ef12512f20cb8e15/out/agc
+cargo:rustc-link-lib=zstd
+cargo:rustc-link-search=/wd/pgr-tk/target/release/build/pgr-db-ef12512f20cb8e15/out/agc/libs
+cargo:rustc-link-lib=stdc++
+cargo:rustc-link-search=/usr/lib/gcc/x86_64-linux-gnu/9/
+cargo:rerun-if-changed=wrapper.h
+cargo:rerun-if-changed=./../agc/src/lib-cxx/agc-api.h
+cargo:rustc-env=VERSION_STRING=pgr-db 0.6.0 (bioconda release build (bioconda:bioconda), linux [x86_64] [rustc 1.79.0 (129f3b996 2024-06-10)])
